@@ -1,0 +1,385 @@
+import {
+  resolveBoostBadgeSince,
+  resolveGuildBoostSince,
+  resolveNitroSince,
+  resolveHasNitro,
+  resolveHasBoost,
+} from "./discordData.js";
+import { attachEmojiToTier, getBoostLevels, getNitroLevels } from "./badgeEmojis.js";
+
+const NITRO_TIER_MONTHS = [1, 3, 6, 12, 24, 36, 60, 72];
+const BOOST_TIER_MONTHS = [1, 2, 3, 6, 9, 12, 15, 18, 24];
+
+const BADGE_MAP = {
+  1: { name: "STAFF", emoji: "👨‍💼" },
+  2: { name: "PARTNER", emoji: "🤝" },
+  4: { name: "HYPESQUAD", emoji: "🏠" },
+  8: { name: "BUG_HUNTER", emoji: "🐛" },
+  64: { name: "EARLY_SUPPORTER", emoji: "👑" },
+  128: { name: "TEAM_USER", emoji: "👥" },
+  512: { name: "SYSTEM", emoji: "⚙️" },
+  16384: { name: "BUG_HUNTER_LEVEL_2", emoji: "🐛" },
+  131072: { name: "VERIFIED_BOT", emoji: "✅" },
+  262144: { name: "EARLY_VERIFIED_BOT_DEVELOPER", emoji: "🛠️" },
+  4194304: { name: "ACTIVE_DEVELOPER", emoji: "🔧" },
+};
+
+const BADGE_ICONS = {
+  nitro: "https://cdn.discordapp.com/badge-icons/2ba85e8022458202676085784aa23e828/2b1f7.png",
+  boost: "https://cdn.discordapp.com/badge-icons/914556dc1a39a114738756a4fa4c40/8a4d2.png",
+};
+
+function addMonths(date, months) {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + months);
+  return result;
+}
+
+function formatDurationPT(from, to = new Date()) {
+  if (!from) return null;
+
+  let start = from instanceof Date ? from : new Date(from);
+  let end = to instanceof Date ? to : new Date(to);
+
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  if (end < start) return "0 segundos";
+
+  let years = end.getFullYear() - start.getFullYear();
+  let months = end.getMonth() - start.getMonth();
+  let days = end.getDate() - start.getDate();
+  let hours = end.getHours() - start.getHours();
+  let minutes = end.getMinutes() - start.getMinutes();
+  let seconds = end.getSeconds() - start.getSeconds();
+
+  if (seconds < 0) {
+    seconds += 60;
+    minutes -= 1;
+  }
+  if (minutes < 0) {
+    minutes += 60;
+    hours -= 1;
+  }
+  if (hours < 0) {
+    hours += 24;
+    days -= 1;
+  }
+  if (days < 0) {
+    const prevMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+    days += prevMonth.getDate();
+    months -= 1;
+  }
+  if (months < 0) {
+    months += 12;
+    years -= 1;
+  }
+
+  const parts = [];
+  if (years > 0) parts.push(`${years} ${years === 1 ? "ano" : "anos"}`);
+  if (months > 0) parts.push(`${months} ${months === 1 ? "mês" : "meses"}`);
+  if (days > 0) parts.push(`${days} ${days === 1 ? "dia" : "dias"}`);
+  if (hours > 0) parts.push(`${hours} ${hours === 1 ? "hora" : "horas"}`);
+  if (minutes > 0 && parts.length < 3) {
+    parts.push(`${minutes} ${minutes === 1 ? "minuto" : "minutos"}`);
+  }
+  if (parts.length === 0) {
+    parts.push(`${Math.max(seconds, 0)} ${seconds === 1 ? "segundo" : "segundos"}`);
+  }
+
+  return parts.join(" ");
+}
+
+function formatDateTimePT(date) {
+  if (!date) return null;
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatDateField(date) {
+  if (!date) return null;
+  const d = date instanceof Date ? date : new Date(date);
+  if (Number.isNaN(d.getTime())) return null;
+
+  const duration = formatDurationPT(d);
+  return {
+    datetime: formatDateTimePT(d),
+    iso: d.toISOString(),
+    duracao: duration,
+    texto: `${formatDateTimePT(d)} (**${duration}**).`,
+  };
+}
+
+function getTierProgress(sinceDate, tierMonths) {
+  if (!sinceDate) return null;
+
+  const start = sinceDate instanceof Date ? sinceDate : new Date(sinceDate);
+  if (Number.isNaN(start.getTime())) return null;
+
+  const now = new Date();
+  if (now < start) return null;
+
+  let currentIndex = -1;
+  for (let i = tierMonths.length - 1; i >= 0; i -= 1) {
+    if (now >= addMonths(start, tierMonths[i])) {
+      currentIndex = i;
+      break;
+    }
+  }
+
+  if (currentIndex === -1) {
+    return {
+      atual: {
+        nivel: 0,
+        meses: 0,
+        duracao: formatDurationPT(start),
+        texto: formatDurationPT(start),
+      },
+      proxima: {
+        nivel: 1,
+        meses: tierMonths[0],
+        restante: formatDurationPT(now, addMonths(start, tierMonths[0])),
+        texto: formatDurationPT(now, addMonths(start, tierMonths[0])),
+      },
+    };
+  }
+
+  const currentTierStart =
+    currentIndex === 0 ? start : addMonths(start, tierMonths[currentIndex - 1]);
+
+  const current = {
+    nivel: currentIndex + 1,
+    meses: tierMonths[currentIndex],
+    duracao: formatDurationPT(currentTierStart),
+    texto: formatDurationPT(currentTierStart),
+    duracao_total: formatDurationPT(start),
+  };
+
+  const nextTierMonths = tierMonths[currentIndex + 1];
+  if (nextTierMonths == null) {
+    return {
+      atual: current,
+      proxima: {
+        nivel: null,
+        meses: null,
+        restante: null,
+        texto: "Nível máximo atingido.",
+      },
+    };
+  }
+
+  const nextTierDate = addMonths(start, nextTierMonths);
+  const restante = formatDurationPT(now, nextTierDate);
+
+  return {
+    atual: current,
+    proxima: {
+      nivel: currentIndex + 2,
+      meses: nextTierMonths,
+      restante,
+      texto: restante,
+    },
+  };
+}
+
+function getBadges(flags, { hasNitro = false, hasBoost = false } = {}) {
+  const badges = [];
+
+  if (hasNitro) {
+    badges.push({ name: "NITRO", emoji: "💎", icon: BADGE_ICONS.nitro });
+  }
+  if (hasBoost) {
+    badges.push({ name: "BOOST", emoji: "🚀", icon: BADGE_ICONS.boost });
+  }
+
+  for (const [bit, badge] of Object.entries(BADGE_MAP)) {
+    if (flags & Number(bit)) badges.push(badge);
+  }
+
+  return badges;
+}
+
+function buildAuthorName(user) {
+  const globalName = user.globalName || user.global_name || user.displayName || user.display_name;
+  const username = user.username;
+  if (globalName && globalName !== username) {
+    return `${username} (${globalName})`;
+  }
+  return globalName || username;
+}
+
+function buildProfileCard({ user, member, profile, executor = null, views = 0 }) {
+  const flags = user.publicFlags ?? user.public_flags ?? 0;
+  const hasNitro = resolveHasNitro(profile, user);
+  const hasBoost = resolveHasBoost(profile, member);
+
+  const nitroSince = resolveNitroSince(profile, user);
+  const boostSince = resolveBoostBadgeSince(profile, member);
+  const guildBoostSince = resolveGuildBoostSince(profile, member);
+
+  const createdAt = user.createdAt ?? (user.createdTimestamp ? new Date(user.createdTimestamp) : null);
+  const joinedAt = member?.joinedAt ?? member?.joined_at ?? profile?.guild_member?.joined_at ?? null;
+
+  const badges = getBadges(flags, { hasNitro, hasBoost });
+  const insigniasTexto = badges.map((b) => b.emoji).join(" ") || "Nenhuma";
+
+  const contaCriada = formatDateField(createdAt);
+  const entrouServidor = formatDateField(joinedAt);
+  const nitroDesde = formatDateField(nitroSince);
+  const impulsionandoDesde = formatDateField(boostSince);
+  const impulsionandoServidorDesde = formatDateField(guildBoostSince);
+
+  const nitroProgressRaw = getTierProgress(nitroSince, NITRO_TIER_MONTHS);
+  const boostProgressRaw = getTierProgress(boostSince, BOOST_TIER_MONTHS);
+
+  const nitroProgress = attachEmojiToTier(nitroProgressRaw, "nitro", profile);
+  const boostProgress = attachEmojiToTier(boostProgressRaw, "boost", profile);
+
+  const avatarUrl =
+    user.displayAvatarURL?.({ extension: "webp", size: 256 }) ??
+    user.avatarURL ??
+    user.avatar ??
+    null;
+
+  const authorName = buildAuthorName(user);
+  const mention = `<@${user.id}>`;
+
+  const card = {
+    author: {
+      name: authorName,
+      icon_url: avatarUrl,
+    },
+    mention,
+    tag: user.username,
+    id: user.id,
+    thumbnail: avatarUrl,
+    insignias: badges,
+    insignias_texto: insigniasTexto,
+    conta_criada_em: contaCriada,
+    entrou_no_servidor_em: entrouServidor,
+    assinante_nitro_desde: nitroDesde,
+    impulsionando_desde: impulsionandoDesde,
+    impulsionando_servidor_desde: impulsionandoServidorDesde,
+    boost_nivel_maximo: boostProgress?.proxima?.texto === "Nível máximo atingido.",
+    insignia_impulso_atual: boostProgress?.atual ?? null,
+    proxima_insignia_impulso: boostProgress?.proxima ?? null,
+    insignia_nitro_atual: nitroProgress?.atual ?? null,
+    proxima_insignia_nitro: nitroProgress?.proxima ?? null,
+    emojis_boost: getBoostLevels(),
+    emojis_nitro: getNitroLevels(),
+    footer: {
+      executado_por: executor?.username ?? executor?.tag ?? "Desconhecido",
+      visualizacoes: views,
+      timestamp: new Date().toISOString(),
+    },
+  };
+
+  card.embed = buildDiscordEmbed(card);
+  return card;
+}
+
+function buildDiscordEmbed(card) {
+  const fields = [
+    { name: "Menção", value: card.mention, inline: true },
+    { name: "Tag", value: `\`${card.tag}\``, inline: true },
+    { name: "ID", value: `\`${card.id}\``, inline: true },
+    { name: "Insígnias", value: card.insignias_texto, inline: false },
+  ];
+
+  if (card.conta_criada_em) {
+    fields.push({
+      name: "📅 Conta criada em",
+      value: card.conta_criada_em.texto,
+      inline: false,
+    });
+  }
+
+  if (card.entrou_no_servidor_em) {
+    fields.push({
+      name: "📅 Entrou no servidor em",
+      value: card.entrou_no_servidor_em.texto,
+      inline: false,
+    });
+  }
+
+  if (card.assinante_nitro_desde) {
+    fields.push({
+      name: "📅 Assinante Nitro desde",
+      value: card.assinante_nitro_desde.texto,
+      inline: false,
+    });
+  }
+
+  if (card.impulsionando_desde) {
+    fields.push({
+      name: "📅 Impulsionando desde",
+      value: card.impulsionando_desde.texto,
+      inline: false,
+    });
+  }
+
+  if (card.insignia_impulso_atual) {
+    const boostEmoji = card.insignia_impulso_atual.emoji ?? "🚀";
+    const nextBoostEmoji = card.proxima_insignia_impulso?.emoji ?? "⏳";
+
+    fields.push(
+      {
+        name: "Insígnia de impulso atual",
+        value: `${boostEmoji} ${card.insignia_impulso_atual.texto}`,
+        inline: true,
+      },
+      {
+        name: "Próxima insígnia de impulso",
+        value: card.proxima_insignia_impulso?.texto === "Nível máximo atingido."
+          ? `${card.insignia_impulso_atual.emoji ?? "🏆"} ${card.proxima_insignia_impulso.texto}`
+          : `${nextBoostEmoji} ${card.proxima_insignia_impulso?.texto ?? "—"}`,
+        inline: true,
+      },
+    );
+  }
+
+  if (card.insignia_nitro_atual) {
+    const nitroEmoji = card.insignia_nitro_atual.emoji ?? "💎";
+    const nextNitroEmoji = card.proxima_insignia_nitro?.emoji ?? "⏳";
+
+    fields.push(
+      {
+        name: "Insígnia de nitro atual",
+        value: `${nitroEmoji} ${card.insignia_nitro_atual.texto}`,
+        inline: true,
+      },
+      {
+        name: "Próxima insígnia de nitro",
+        value: card.proxima_insignia_nitro?.texto === "Nível máximo atingido."
+          ? `${card.insignia_nitro_atual.emoji ?? "🏆"} ${card.proxima_insignia_nitro.texto}`
+          : `${nextNitroEmoji} ${card.proxima_insignia_nitro?.texto ?? "—"}`,
+        inline: true,
+      },
+    );
+  }
+
+  return {
+    color: 0x5865f2,
+    author: card.author,
+    thumbnail: card.thumbnail ? { url: card.thumbnail } : undefined,
+    fields,
+    footer: {
+      text: `Comando executado por: ${card.footer.executado_por} | Visualizações: ${card.footer.visualizacoes}`,
+      icon_url: card.author.icon_url,
+    },
+    timestamp: card.footer.timestamp,
+  };
+}
+
+export {
+  formatDurationPT,
+  formatDateTimePT,
+  formatDateField,
+  getTierProgress,
+  getBadges,
+  buildProfileCard,
+  buildDiscordEmbed,
+  NITRO_TIER_MONTHS,
+  BOOST_TIER_MONTHS,
+};

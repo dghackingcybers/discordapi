@@ -1,0 +1,7 @@
+node_modules/
+.env
+*.log
+frontend.zip
+.DS_Store
+assets/
+apidiscord/
