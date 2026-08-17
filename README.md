@@ -24,6 +24,23 @@ npm start
 
 Acesse: `http://localhost:3000/user/ID_DO_USUARIO`
 
+## Subir no GitHub
+
+```powershell
+# 1. Crie repo vazio em https://github.com/new (nome: discordapi)
+# 2. Edite push-github.ps1 com seu username
+# 3. Execute:
+.\push-github.ps1
+```
+
+Ou manualmente:
+
+```bash
+git branch -M main
+git remote add origin https://github.com/SEU_USUARIO/discordapi.git
+git push -u origin main
+```
+
 ## Deploy no Render (grátis)
 
 1. Faça fork ou suba este repo no GitHub
