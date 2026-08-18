@@ -122,7 +122,11 @@ async function fetchUserSafe(client, userId, guildId, profile = null, member = n
 
   if (profile?.user) {
     try {
-      return client.users._add(profile.user, false);
+      const userFromProfile = client.users._add(profile.user, false);
+      if (profile.user.banner && !userFromProfile.banner) {
+        userFromProfile.banner = profile.user.banner;
+      }
+      return userFromProfile;
     } catch {
       // segue para outros fallbacks
     }

@@ -209,6 +209,19 @@ function buildAuthorName(user) {
   return globalName || username;
 }
 
+function resolveBannerUrl(user, profile) {
+  const bannerHash =
+    user?.banner ??
+    profile?.user?.banner ??
+    profile?.banner ??
+    null;
+
+  if (!bannerHash || !user?.id) return null;
+
+  const extension = String(bannerHash).startsWith("a_") ? "gif" : "png";
+  return `https://cdn.discordapp.com/banners/${user.id}/${bannerHash}.${extension}?size=4096`;
+}
+
 function buildProfileCard({ user, member, profile, executor = null, views = 0 }) {
   const flags = user.publicFlags ?? user.public_flags ?? 0;
   const hasNitro = resolveHasNitro(profile, user);
@@ -252,11 +265,7 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0 })
     user.avatar ??
     null;
 
-  const bannerHash = user.banner ?? profile?.user?.banner ?? null;
-  const bannerUrl = user.bannerURL?.({ size: 4096 }) ??
-    (bannerHash && user.id
-      ? `https://cdn.discordapp.com/banners/${user.id}/${bannerHash}.${String(bannerHash).startsWith("a_") ? "gif" : "png"}?size=4096`
-      : null);
+  const bannerUrl = resolveBannerUrl(user, profile);
 
   const bio = profile?.user?.bio ?? profile?.bio ?? profile?.guild_member?.bio ?? null;
   const pronouns = profile?.pronouns ?? profile?.user_profile?.pronouns ?? null;
