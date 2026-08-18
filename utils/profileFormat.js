@@ -5,7 +5,7 @@ import {
   resolveHasNitro,
   resolveHasBoost,
 } from "./discordData.js";
-import { attachEmojiToTier, getBoostLevels, getNitroLevels } from "./badgeEmojis.js";
+import { attachEmojiToTier, getBoostLevels, getNitroLevels, getTierEmoji } from "./badgeEmojis.js";
 
 const NITRO_TIER_MONTHS = [1, 3, 6, 12, 24, 36, 60, 72];
 const BOOST_TIER_MONTHS = [1, 2, 3, 6, 9, 12, 15, 18, 24];
@@ -222,7 +222,6 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0 })
   const joinedAt = member?.joinedAt ?? member?.joined_at ?? profile?.guild_member?.joined_at ?? null;
 
   const badges = getBadges(flags, { hasNitro, hasBoost });
-  const insigniasTexto = badges.map((b) => b.emoji).join(" ") || "Nenhuma";
 
   const contaCriada = formatDateField(createdAt);
   const entrouServidor = formatDateField(joinedAt);
@@ -236,11 +235,31 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0 })
   const nitroProgress = attachEmojiToTier(nitroProgressRaw, "nitro", profile);
   const boostProgress = attachEmojiToTier(boostProgressRaw, "boost", profile);
 
+  const boostEmojiInsignia = getTierEmoji(boostProgress?.atual);
+  const nitroEmojiInsignia = getTierEmoji(nitroProgress?.atual);
+  const insigniasParts = [];
+  if (hasNitro) insigniasParts.push(nitroEmojiInsignia);
+  if (hasBoost) insigniasParts.push(boostEmojiInsignia);
+  for (const b of badges.filter((b) => !["NITRO", "BOOST"].includes(b.name))) {
+    insigniasParts.push(b.emoji);
+  }
+  const insigniasTexto = insigniasParts.join(" ") || "Nenhuma";
+
   const avatarUrl =
+    user.displayAvatarURL?.({ extension: "webp", size: 4096 }) ??
     user.displayAvatarURL?.({ extension: "webp", size: 256 }) ??
     user.avatarURL ??
     user.avatar ??
     null;
+
+  const bannerHash = user.banner ?? profile?.user?.banner ?? null;
+  const bannerUrl = user.bannerURL?.({ size: 4096 }) ??
+    (bannerHash && user.id
+      ? `https://cdn.discordapp.com/banners/${user.id}/${bannerHash}.${String(bannerHash).startsWith("a_") ? "gif" : "png"}?size=4096`
+      : null);
+
+  const bio = profile?.user?.bio ?? profile?.bio ?? profile?.guild_member?.bio ?? null;
+  const pronouns = profile?.pronouns ?? profile?.user_profile?.pronouns ?? null;
 
   const authorName = buildAuthorName(user);
   const mention = `<@${user.id}>`;
@@ -268,6 +287,10 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0 })
     proxima_insignia_nitro: nitroProgress?.proxima ?? null,
     emojis_boost: getBoostLevels(),
     emojis_nitro: getNitroLevels(),
+    avatar_url: avatarUrl,
+    banner_url: bannerUrl,
+    bio,
+    pronouns,
     footer: {
       executado_por: executor?.username ?? executor?.tag ?? "Desconhecido",
       visualizacoes: views,
@@ -320,8 +343,8 @@ function buildDiscordEmbed(card) {
   }
 
   if (card.insignia_impulso_atual) {
-    const boostEmoji = card.insignia_impulso_atual.emoji ?? "🚀";
-    const nextBoostEmoji = card.proxima_insignia_impulso?.emoji ?? "⏳";
+    const boostEmoji = getTierEmoji(card.insignia_impulso_atual);
+    const nextBoostEmoji = getTierEmoji(card.proxima_insignia_impulso);
 
     fields.push(
       {
@@ -332,7 +355,7 @@ function buildDiscordEmbed(card) {
       {
         name: "Próxima insígnia de impulso",
         value: card.proxima_insignia_impulso?.texto === "Nível máximo atingido."
-          ? `${card.insignia_impulso_atual.emoji ?? "🏆"} ${card.proxima_insignia_impulso.texto}`
+          ? `${boostEmoji} ${card.proxima_insignia_impulso.texto}`
           : `${nextBoostEmoji} ${card.proxima_insignia_impulso?.texto ?? "—"}`,
         inline: true,
       },
@@ -340,8 +363,8 @@ function buildDiscordEmbed(card) {
   }
 
   if (card.insignia_nitro_atual) {
-    const nitroEmoji = card.insignia_nitro_atual.emoji ?? "💎";
-    const nextNitroEmoji = card.proxima_insignia_nitro?.emoji ?? "⏳";
+    const nitroEmoji = getTierEmoji(card.insignia_nitro_atual);
+    const nextNitroEmoji = getTierEmoji(card.proxima_insignia_nitro);
 
     fields.push(
       {
@@ -352,7 +375,7 @@ function buildDiscordEmbed(card) {
       {
         name: "Próxima insígnia de nitro",
         value: card.proxima_insignia_nitro?.texto === "Nível máximo atingido."
-          ? `${card.insignia_nitro_atual.emoji ?? "🏆"} ${card.proxima_insignia_nitro.texto}`
+          ? `${nitroEmoji} ${card.proxima_insignia_nitro.texto}`
           : `${nextNitroEmoji} ${card.proxima_insignia_nitro?.texto ?? "—"}`,
         inline: true,
       },

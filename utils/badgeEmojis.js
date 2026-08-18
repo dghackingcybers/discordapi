@@ -26,6 +26,10 @@ const NITRO_LEVELS = [
   { nivel: 8, meses: 72, suffix: "87159", label: "72 meses" },
 ];
 
+/** Fallback unicode por nível (quando não há emoji custom no .env) */
+const BOOST_UNICODE = ["🔺", "🔷", "⬡", "🔶", "🟣", "⭐", "✨", "🔮", "💎"];
+const NITRO_UNICODE = ["🌑", "🌒", "🌓", "🌔", "🌕", "💚", "❤️", "🩷"];
+
 function badgeIconUrl(hash, suffix) {
   return `https://cdn.discordapp.com/badge-icons/${hash}/${suffix}.png`;
 }
@@ -52,9 +56,10 @@ function getCustomNitroEmojis() {
   return customNitroEmojis;
 }
 
-function buildLevelEntry(levelDef, hash, customEmojis) {
+function buildLevelEntry(levelDef, hash, customEmojis, unicodeMap) {
   const iconUrl = badgeIconUrl(hash, levelDef.suffix);
   const customEmoji = customEmojis[levelDef.nivel] ?? null;
+  const emojiUnicode = unicodeMap[levelDef.nivel - 1] ?? "💎";
 
   return {
     nivel: levelDef.nivel,
@@ -62,16 +67,21 @@ function buildLevelEntry(levelDef, hash, customEmojis) {
     label: levelDef.label,
     icon_url: iconUrl,
     emoji: customEmoji,
-    emoji_display: customEmoji ?? `[nível ${levelDef.nivel}](${iconUrl})`,
+    emoji_unicode: emojiUnicode,
+    emoji_display: customEmoji ?? emojiUnicode,
   };
 }
 
 function getBoostLevels() {
-  return BOOST_LEVELS.map((level) => buildLevelEntry(level, BOOST_ICON_HASH, getCustomBoostEmojis()));
+  return BOOST_LEVELS.map((level) =>
+    buildLevelEntry(level, BOOST_ICON_HASH, getCustomBoostEmojis(), BOOST_UNICODE),
+  );
 }
 
 function getNitroLevels() {
-  return NITRO_LEVELS.map((level) => buildLevelEntry(level, NITRO_ICON_HASH, getCustomNitroEmojis()));
+  return NITRO_LEVELS.map((level) =>
+    buildLevelEntry(level, NITRO_ICON_HASH, getCustomNitroEmojis(), NITRO_UNICODE),
+  );
 }
 
 function getLevelByNumber(levels, nivel) {
@@ -109,16 +119,26 @@ function attachEmojiToTier(tierData, type, profile = null) {
       ...entry,
       ...levelInfo,
       texto: entry.texto ?? entry.duracao ?? entry.restante ?? null,
-      emoji_display: levelInfo.emoji ?? levelInfo.emoji_display,
+      emoji_display: levelInfo.emoji ?? levelInfo.emoji_unicode,
     };
   };
 
   return {
     atual: enrich(tierData.atual, profileLevel),
     proxima: tierData.proxima?.texto === "Nível máximo atingido."
-      ? { ...tierData.proxima, ...getLevelByNumber(levels, levels.length), texto: "Nível máximo atingido." }
+      ? {
+          ...tierData.proxima,
+          ...getLevelByNumber(levels, levels.length),
+          texto: "Nível máximo atingido.",
+          emoji_display: getLevelByNumber(levels, levels.length)?.emoji_display,
+        }
       : enrich(tierData.proxima, (tierData.atual?.nivel ?? profileLevel ?? 0) + 1),
   };
+}
+
+function getTierEmoji(tier) {
+  if (!tier) return "•";
+  return tier.emoji ?? tier.emoji_unicode ?? tier.emoji_display ?? "•";
 }
 
 export {
@@ -128,5 +148,6 @@ export {
   getNitroLevels,
   getLevelByNumber,
   attachEmojiToTier,
+  getTierEmoji,
   badgeIconUrl,
 };
