@@ -313,7 +313,7 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0 })
 
 function buildDiscordEmbed(card) {
   const fields = [
-    { name: "Menção", value: card.mention, inline: true },
+    { name: "<a:nbagangczz:1538804040647966781> User", value: card.mention, inline: true },
     { name: "Tag", value: `\`${card.tag}\``, inline: true },
     { name: "ID", value: `\`${card.id}\``, inline: true },
     { name: "Insígnias", value: card.insignias_texto, inline: false },
