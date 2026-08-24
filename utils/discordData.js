@@ -4,6 +4,13 @@ function toDate(value) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function pickValue(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return null;
+}
+
 /**
  * Data global da insígnia de boost (premium_guild_since).
  * Nunca usar member.premiumSince aqui — isso é por servidor.
@@ -35,6 +42,10 @@ function resolveGuildBoostSince(profile, member = null, guildId = null) {
     return toDate(profile.guild_member.premium_since);
   }
 
+  if (guildId && profile?.guild_member && !profile.guild_member.guild_id) {
+    return toDate(profile.guild_member.premium_since);
+  }
+
   return null;
 }
 
@@ -47,6 +58,7 @@ function resolveNitroSince(profile, user = null) {
     profile?.premium_since,
     profile?.user?.premium_since,
     user?.premiumSince,
+    profile?.user_profile?.premium_since,
   ];
 
   for (const value of candidates) {
@@ -81,53 +93,84 @@ async function fetchMemberInGuild(client, guildId, userId) {
   }
 }
 
-async function fetchProfileById(client, userId, guildId) {
-  let guildProfile = null;
-  let globalProfile = null;
+function mergeBadges(a = [], b = []) {
+  const map = new Map();
 
-  const profileQuery = {
+  for (const badge of [...a, ...b]) {
+    const id = String(badge?.id ?? badge?.name ?? "").toLowerCase();
+    if (!id) continue;
+    map.set(id, badge);
+  }
+
+  return [...map.values()];
+}
+
+function mergeProfiles(a, b) {
+  if (!a) return b ?? null;
+  if (!b) return a;
+
+  const mergedUser = { ...a.user, ...b.user };
+
+  return {
+    ...a,
+    ...b,
+    private: Boolean(a.private || b.private),
+    user: {
+      ...mergedUser,
+      bio: pickValue(mergedUser.bio, b.user?.bio, a.user?.bio),
+      primary_guild: pickValue(b.user?.primary_guild, a.user?.primary_guild),
+    },
+    bio: pickValue(b.bio, a.bio, b.user?.bio, a.user?.bio, b.user_profile?.bio, a.user_profile?.bio),
+    pronouns: pickValue(b.pronouns, a.pronouns, b.user_profile?.pronouns, a.user_profile?.pronouns),
+    premium_since: pickValue(a.premium_since, b.premium_since),
+    premium_guild_since: pickValue(a.premium_guild_since, b.premium_guild_since),
+    premium_type: pickValue(b.premium_type, a.premium_type, b.user?.premium_type, a.user?.premium_type),
+    guild_member: { ...a.guild_member, ...b.guild_member },
+    guild_member_profile: { ...a.guild_member_profile, ...b.guild_member_profile },
+    mutual_guilds: b.mutual_guilds?.length ? b.mutual_guilds : a.mutual_guilds,
+    mutual_friends_count: pickValue(b.mutual_friends_count, a.mutual_friends_count),
+    user_profile: { ...a.user_profile, ...b.user_profile },
+    badges: mergeBadges(a.badges, b.badges),
+    connected_accounts: b.connected_accounts?.length ? b.connected_accounts : a.connected_accounts ?? [],
+  };
+}
+
+async function fetchProfileById(client, userId, guildId) {
+  const baseQuery = {
     with_mutual_guilds: true,
     with_mutual_friends: true,
     with_mutual_friends_count: true,
     ...(guildId ? { guild_id: guildId } : {}),
   };
 
+  const queries = [
+    baseQuery,
+    { ...baseQuery, type: "popout" },
+    { ...baseQuery, type: "modal" },
+  ];
+
   if (guildId) {
-    try {
-      guildProfile = await client.api.users(userId).profile.get({ query: profileQuery });
-    } catch (error) {
-      console.warn(`⚠️ Perfil do servidor indisponível (${guildId}):`, error.message);
-    }
-  }
-
-  try {
-    globalProfile = await client.api.users(userId).profile.get({
-      query: {
-        with_mutual_guilds: true,
-        with_mutual_friends: true,
-        with_mutual_friends_count: true,
-        ...(guildId ? { guild_id: guildId } : {}),
-      },
+    queries.push({
+      with_mutual_guilds: true,
+      with_mutual_friends: true,
+      with_mutual_friends_count: true,
     });
-  } catch (error) {
-    console.warn('⚠️ Perfil global indisponível:', error.message);
   }
 
-  if (!guildProfile && !globalProfile && guildId) {
+  let merged = null;
+
+  for (const query of queries) {
     try {
-      globalProfile = await client.api.users(userId).profile.get({
-        query: {
-          with_mutual_guilds: true,
-          with_mutual_friends: true,
-          with_mutual_friends_count: true,
-        },
-      });
-    } catch {
-      // ignora
+      const profile = await client.api.users(userId).profile.get({ query });
+      merged = mergeProfiles(merged, profile);
+    } catch (error) {
+      if (!merged) {
+        console.warn(`⚠️ Perfil indisponível (${query.type ?? "default"}):`, error.message);
+      }
     }
   }
 
-  return mergeProfiles(guildProfile, globalProfile);
+  return merged;
 }
 
 async function fetchUserSafe(client, userId, guildId, profile = null, member = null) {
@@ -141,6 +184,9 @@ async function fetchUserSafe(client, userId, guildId, profile = null, member = n
       const userFromProfile = client.users._add(profile.user, false);
       if (profile.user.banner && !userFromProfile.banner) {
         userFromProfile.banner = profile.user.banner;
+      }
+      if (profile.user.primary_guild && !userFromProfile.primaryGuild) {
+        userFromProfile.primaryGuild = profile.user.primary_guild;
       }
       return userFromProfile;
     } catch {
@@ -156,7 +202,7 @@ async function fetchUserSafe(client, userId, guildId, profile = null, member = n
   try {
     return await client.users.fetch(userId);
   } catch (error) {
-    console.warn('⚠️ users.fetch falhou, tentando servidores em comum:', error.message);
+    console.warn("⚠️ users.fetch falhou, tentando servidores em comum:", error.message);
   }
 
   for (const guild of client.guilds.cache.values()) {
@@ -169,37 +215,6 @@ async function fetchUserSafe(client, userId, guildId, profile = null, member = n
   }
 
   return null;
-}
-
-function mergeProfiles(guildProfile, globalProfile) {
-  if (!guildProfile) return globalProfile ?? null;
-  if (!globalProfile) return guildProfile;
-
-  const mergedUser = { ...globalProfile.user, ...guildProfile.user };
-  if (!mergedUser.bio) {
-    mergedUser.bio =
-      guildProfile.user?.bio ??
-      globalProfile.user?.bio ??
-      guildProfile.bio ??
-      globalProfile.bio ??
-      null;
-  }
-
-  return {
-    ...globalProfile,
-    ...guildProfile,
-    user: mergedUser,
-    bio: guildProfile.bio ?? globalProfile.bio ?? mergedUser.bio ?? null,
-    pronouns: guildProfile.pronouns ?? globalProfile.pronouns ?? null,
-    premium_since: globalProfile.premium_since ?? guildProfile.premium_since,
-    premium_guild_since: globalProfile.premium_guild_since ?? guildProfile.premium_guild_since,
-    premium_type: guildProfile.premium_type ?? globalProfile.premium_type,
-    guild_member: guildProfile.guild_member ?? globalProfile.guild_member,
-    mutual_guilds: guildProfile.mutual_guilds ?? globalProfile.mutual_guilds,
-    mutual_friends_count: guildProfile.mutual_friends_count ?? globalProfile.mutual_friends_count,
-    user_profile: { ...globalProfile.user_profile, ...guildProfile.user_profile },
-    badges: guildProfile.badges ?? globalProfile.badges,
-  };
 }
 
 async function fetchProfileForUser(user, guildId, client) {
@@ -254,4 +269,5 @@ export {
   fetchProfileForUser,
   fetchUserSafe,
   findMemberInMutualGuilds,
+  mergeProfiles,
 };

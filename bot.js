@@ -10,7 +10,7 @@ import {
   fetchProfileForUser,
   fetchProfileById,
   fetchUserSafe,
-  fetchMemberInGuild,
+  findMemberInMutualGuilds,
 } from './utils/discordData.js';
 import { extractProfileExtras } from './utils/profileExtras.js';
 import {
@@ -64,8 +64,8 @@ client.on('userUpdate', (oldUser, newUser) => {
 
 async function getUserSubscriptions(userId, guildId = GUILD_ID) {
   try {
-    const member = guildId ? await fetchMemberInGuild(client, guildId, userId) : null;
     let profile = await fetchProfileById(client, userId, guildId);
+    const member = await findMemberInMutualGuilds(client, userId, profile, guildId);
 
     const user = await fetchUserSafe(client, userId, guildId, profile, member);
     if (!user) {
@@ -110,10 +110,14 @@ async function getUserSubscriptions(userId, guildId = GUILD_ID) {
   }
 }
 
-async function getUserPresence(userId) {
+async function getUserPresence(userId, guildId = GUILD_ID) {
   try {
-    const guild = client.guilds.cache.get(GUILD_ID);
-    if (!guild) throw new Error('Guild não encontrada');
+    const targetGuildId = guildId || GUILD_ID;
+    const guild = client.guilds.cache.get(targetGuildId);
+
+    if (!guild) {
+      throw new Error('Guild não encontrada');
+    }
 
     const member = await guild.members.fetch(userId);
     const presence = member.presence || null;
@@ -121,6 +125,7 @@ async function getUserPresence(userId) {
     let activities = [];
     let discordStatus = 'offline';
     let listeningToSpotify = false;
+    let customStatus = null;
 
     if (presence) {
       discordStatus = presence.status;
@@ -140,10 +145,17 @@ async function getUserPresence(userId) {
       }));
 
       listeningToSpotify = activities.some((a) => a.name === 'Spotify');
+
+      const customActivity = presence.activities.find((activity) => activity.type === 4);
+      if (customActivity) {
+        const emojiPart = customActivity.emoji?.name ? `${customActivity.emoji.name} ` : '';
+        customStatus = `${emojiPart}${customActivity.state || customActivity.name || ''}`.trim();
+      }
     }
 
     return {
       discord_status: discordStatus,
+      custom_status: customStatus,
       activities,
       active_on_discord_web: presence?.clientStatus?.web || false,
       active_on_discord_desktop: presence?.clientStatus?.desktop || false,
@@ -154,6 +166,7 @@ async function getUserPresence(userId) {
   } catch (error) {
     return {
       discord_status: 'offline',
+      custom_status: null,
       activities: [],
       active_on_discord_web: false,
       active_on_discord_desktop: false,
@@ -174,6 +187,7 @@ async function getUserProfileCard(userId, options = {}) {
 
   const { user, member, profile } = subscriptions._raw;
   const executor = options.executor ?? client.user;
+  const presence = await getUserPresence(userId, guildId);
 
   const profileCard = buildProfileCard({
     user,
@@ -182,6 +196,7 @@ async function getUserProfileCard(userId, options = {}) {
     executor,
     views: options.views ?? 0,
     guildId,
+    customStatus: presence.custom_status,
   });
 
   return { success: true, profile: profileCard };
@@ -195,7 +210,7 @@ async function getUserInfo(userId, options = {}) {
     }
 
     const { _raw, ...discordUser } = userSubscriptions;
-    const userPresence = await getUserPresence(userId);
+    const userPresence = await getUserPresence(userId, options.guildId || GUILD_ID);
     const profileCard = buildProfileCard({
       user: _raw.user,
       member: _raw.member,
@@ -203,6 +218,7 @@ async function getUserInfo(userId, options = {}) {
       executor: options.executor ?? client.user,
       views: options.views ?? 0,
       guildId: options.guildId || GUILD_ID,
+      customStatus: userPresence.custom_status,
     });
 
     return {

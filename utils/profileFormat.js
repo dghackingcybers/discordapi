@@ -242,7 +242,30 @@ function resolveBannerUrl(user, profile) {
   return `https://cdn.discordapp.com/banners/${user.id}/${bannerHash}.${extension}?size=4096`;
 }
 
-function buildProfileCard({ user, member, profile, executor = null, views = 0, guildId = null }) {
+function buildInsigniasTexto(badges, nitroProgress, boostProgress, hasNitro, hasBoost) {
+  const parts = [];
+
+  if (hasNitro) {
+    const emoji = getTierEmoji(nitroProgress?.atual);
+    parts.push(emoji !== "•" ? emoji : "💎");
+  }
+
+  if (hasBoost) {
+    const emoji = getTierEmoji(boostProgress?.atual);
+    parts.push(emoji !== "•" ? emoji : "🚀");
+  }
+
+  for (const badge of badges) {
+    if (["NITRO", "BOOST"].includes(badge.name)) continue;
+    if (badge.emoji && !parts.includes(badge.emoji)) {
+      parts.push(badge.emoji);
+    }
+  }
+
+  return parts.join(" ") || "Nenhuma";
+}
+
+function buildProfileCard({ user, member, profile, executor = null, views = 0, guildId = null, customStatus = null }) {
   const flags = user.publicFlags ?? user.public_flags ?? 0;
   const targetGuildId = guildId ?? member?.guild?.id ?? profile?.guild_member?.guild_id ?? null;
 
@@ -254,6 +277,7 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0, g
   const nitroSince = resolveNitroSince(profile, user);
   const boostSince = resolveBoostBadgeSince(profile);
   const guildBoostSince = resolveGuildBoostSince(profile, member, targetGuildId);
+  const boostTierSince = boostSince ?? guildBoostSince;
 
   const createdAt = user.createdAt ?? (user.createdTimestamp ? new Date(user.createdTimestamp) : null);
   const joinedAt = member?.joinedAt ?? member?.joined_at ?? profile?.guild_member?.joined_at ?? null;
@@ -267,12 +291,12 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0, g
   const impulsionandoServidorDesde = formatDateField(guildBoostSince);
 
   const nitroProgressRaw = getTierProgress(nitroSince, NITRO_TIER_MONTHS);
-  const boostProgressRaw = getTierProgress(boostSince, BOOST_TIER_MONTHS);
+  const boostProgressRaw = getTierProgress(boostTierSince, BOOST_TIER_MONTHS);
 
   const nitroProgress = attachEmojiToTier(nitroProgressRaw, "nitro", profile);
   const boostProgress = attachEmojiToTier(boostProgressRaw, "boost", profile);
 
-  const evolucao_impulso = buildTierTimeline(boostSince, BOOST_TIER_MONTHS, BOOST_TIER_NAMES).map((tier, index) => ({
+  const evolucao_impulso = buildTierTimeline(boostTierSince, BOOST_TIER_MONTHS, BOOST_TIER_NAMES).map((tier, index) => ({
     ...tier,
     ...(getBoostLevels()[index] ?? {}),
   }));
@@ -286,20 +310,9 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0, g
 
   const bio = resolveProfileBio(profile, member) ?? extras.bio;
   const pronouns = resolveProfilePronouns(profile) ?? extras.pronouns;
+  const statusCustomizado = customStatus ?? null;
 
-  const boostEmojiInsignia = getTierEmoji(boostProgress?.atual);
-  const nitroEmojiInsignia = getTierEmoji(nitroProgress?.atual);
-  const insigniasParts = [];
-  if (hasNitro) insigniasParts.push(nitroEmojiInsignia);
-  if (hasBoost) insigniasParts.push(boostEmojiInsignia);
-
-  for (const badge of badges) {
-    if (["NITRO", "BOOST"].includes(badge.name)) continue;
-    if (badge.emoji && !insigniasParts.includes(badge.emoji)) {
-      insigniasParts.push(badge.emoji);
-    }
-  }
-  const insigniasTexto = insigniasParts.join(" ") || "Nenhuma";
+  const insigniasTexto = buildInsigniasTexto(badges, nitroProgress, boostProgress, hasNitro, hasBoost);
 
   const avatarUrl =
     user.displayAvatarURL?.({ extension: "webp", size: 4096 }) ??
@@ -347,6 +360,7 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0, g
     banner_url: bannerUrl,
     bio,
     pronouns,
+    status_customizado: statusCustomizado,
     footer: {
       executado_por: executor?.username ?? executor?.tag ?? "Desconhecido",
       visualizacoes: views,
@@ -379,6 +393,20 @@ function buildDiscordEmbed(card) {
       name: "📓 Bio",
       value: card.bio.slice(0, 1024),
       inline: false,
+    });
+  } else if (card.status_customizado) {
+    fields.push({
+      name: "💬 Status",
+      value: card.status_customizado.slice(0, 1024),
+      inline: false,
+    });
+  }
+
+  if (card.extras?.server_tag) {
+    fields.push({
+      name: "🏷️ Tag de servidor",
+      value: `\`${card.extras.server_tag}\``,
+      inline: true,
     });
   }
 

@@ -6,8 +6,19 @@ function hexColor(value) {
   return `#${num.toString(16).padStart(6, "0")}`;
 }
 
+function pickString(...values) {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return null;
+}
+
 function isDiscordPrivateProfile(profile) {
   if (!profile) return false;
+
+  if (profile.private === true) return true;
 
   const userProfile = profile.user_profile ?? profile.user?.user_profile ?? {};
   const flags = userProfile.flags ?? profile.flags ?? 0;
@@ -22,32 +33,58 @@ function isDiscordPrivateProfile(profile) {
 }
 
 function resolveProfileBio(profile, member = null) {
-  const guildMember = profile?.guild_member ?? member ?? {};
+  const guildMemberProfile = profile?.guild_member_profile ?? {};
 
-  return (
-    profile?.user?.bio ??
-    profile?.bio ??
-    guildMember.bio ??
-    profile?.user_profile?.bio ??
-    profile?.about_me ??
-    null
+  return pickString(
+    profile?.user?.bio,
+    profile?.bio,
+    guildMemberProfile.bio,
+    profile?.user_profile?.bio,
+    profile?.guild_member?.bio,
+    member?.bio,
+    profile?.about_me,
   );
 }
 
 function resolveProfilePronouns(profile) {
   const userProfile = profile?.user_profile ?? profile?.user?.user_profile ?? {};
-  return profile?.pronouns ?? userProfile.pronouns ?? profile?.user?.pronouns ?? null;
+  const guildMemberProfile = profile?.guild_member_profile ?? {};
+
+  return pickString(
+    profile?.pronouns,
+    userProfile.pronouns,
+    guildMemberProfile.pronouns,
+    profile?.user?.pronouns,
+  );
+}
+
+function resolveServerTag(profile, user) {
+  const guildMemberProfile = profile?.guild_member_profile ?? {};
+  const primaryGuild = user?.primary_guild ?? profile?.user?.primary_guild ?? null;
+  const tagFromMember = guildMemberProfile.tag ?? profile?.guild_member?.tag ?? null;
+
+  if (typeof tagFromMember === "string") return tagFromMember;
+  if (tagFromMember?.name) return tagFromMember.name;
+  if (typeof primaryGuild?.tag === "string") return primaryGuild.tag;
+  if (profile?.guild_tag?.name) return profile.guild_tag.name;
+
+  return null;
 }
 
 function extractProfileExtras(profile, user, member = null) {
   const userProfile = profile?.user_profile ?? profile?.user?.user_profile ?? {};
-  const guildMemberProfile = profile?.guild_member ?? member ?? {};
+  const guildMemberProfile = profile?.guild_member_profile ?? profile?.guild_member ?? member ?? {};
 
-  const themeColors = userProfile.theme_colors ?? profile?.theme_colors ?? null;
+  const themeColors = userProfile.theme_colors ?? profile?.theme_colors ?? guildMemberProfile.theme_colors ?? null;
   const primary = Array.isArray(themeColors) ? themeColors[0] : null;
   const accent = Array.isArray(themeColors) ? themeColors[1] : null;
 
-  const connections = (userProfile.connected_accounts ?? profile?.connected_accounts ?? []).map((account) => ({
+  const rawConnections =
+    profile?.connected_accounts ??
+    userProfile.connected_accounts ??
+    [];
+
+  const connections = rawConnections.map((account) => ({
     type: account.type,
     name: account.name,
     verified: !!account.verified,
@@ -57,6 +94,7 @@ function extractProfileExtras(profile, user, member = null) {
   }));
 
   const displayStyles = userProfile.display_name_styles ?? profile?.display_name_styles ?? null;
+  const serverTag = resolveServerTag(profile, user);
 
   return {
     bio: resolveProfileBio(profile, member),
@@ -64,13 +102,13 @@ function extractProfileExtras(profile, user, member = null) {
     perfil_privado_discord: isDiscordPrivateProfile(profile),
     theme_primary: hexColor(primary),
     theme_accent: hexColor(accent),
-    banner_color: hexColor(user?.bannerColor ?? user?.accentColor ?? profile?.user?.banner_color),
+    banner_color: hexColor(user?.bannerColor ?? user?.accentColor ?? profile?.user?.banner_color ?? profile?.user?.accent_color),
     display_name_styles: displayStyles,
     display_font: displayStyles?.font ?? displayStyles?.font_id ?? "gg sans",
     display_effect: displayStyles?.effect ?? displayStyles?.effect_id ?? "Desconhecido",
     display_primary: hexColor(displayStyles?.colors?.[0] ?? displayStyles?.primary_color),
     display_secondary: hexColor(displayStyles?.colors?.[1] ?? displayStyles?.secondary_color),
-    server_tag: guildMemberProfile.tag?.name ?? profile?.guild_tag?.name ?? null,
+    server_tag: serverTag,
     server_tag_url: guildMemberProfile.tag?.url ?? profile?.guild_tag?.url ?? null,
     connections,
     mutual_guilds: (profile?.mutual_guilds ?? []).map((guild) => ({
@@ -86,6 +124,8 @@ export {
   extractProfileExtras,
   hexColor,
   isDiscordPrivateProfile,
+  pickString,
   resolveProfileBio,
   resolveProfilePronouns,
+  resolveServerTag,
 };
