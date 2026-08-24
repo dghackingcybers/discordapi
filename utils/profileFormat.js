@@ -19,7 +19,7 @@ const BADGE_MAP = {
   2: { name: "PARTNER", emoji: "🤝" },
   4: { name: "HYPESQUAD", emoji: "🏠" },
   8: { name: "BUG_HUNTER", emoji: "🐛" },
-  64: { name: "EARLY_SUPPORTER", emoji: "👑" },
+  64: { name: "EARLY_SUPPORTER", emoji: process.env.BADGE_EMOJI_EARLY_SUPPORTER || "<:EarlySupporter:1067078594863562803>" },
   128: { name: "TEAM_USER", emoji: "👥" },
   512: { name: "SYSTEM", emoji: "⚙️" },
   16384: { name: "BUG_HUNTER_LEVEL_2", emoji: "🐛" },

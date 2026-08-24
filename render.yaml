@@ -55,3 +55,5 @@ services:
         sync: false
       - key: BADGE_EMOJI_ACTIVE_DEV
         sync: false
+      - key: BADGE_EMOJI_EARLY_SUPPORTER
+        sync: false
