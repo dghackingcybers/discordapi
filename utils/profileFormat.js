@@ -1,11 +1,15 @@
 import {
   resolveBoostBadgeSince,
   resolveGuildBoostSince,
+  isBoostingGuild,
   resolveNitroSince,
   resolveHasNitro,
   resolveHasBoost,
 } from "./discordData.js";
 import { attachEmojiToTier, getBoostLevels, getNitroLevels, getTierEmoji } from "./badgeEmojis.js";
+import { buildTierTimeline, BOOST_TIER_NAMES, NITRO_TIER_NAMES } from "./tierTimeline.js";
+import { extractProfileExtras } from "./profileExtras.js";
+import { collectProfileBadges } from "./profileBadges.js";
 
 const NITRO_TIER_MONTHS = [1, 3, 6, 12, 24, 36, 60, 72];
 const BOOST_TIER_MONTHS = [1, 2, 3, 6, 9, 12, 15, 18, 24];
@@ -183,18 +187,34 @@ function getTierProgress(sinceDate, tierMonths) {
   };
 }
 
-function getBadges(flags, { hasNitro = false, hasBoost = false } = {}) {
+function getBadges(flags, { hasNitro = false, hasBoost = false, profile = null } = {}) {
   const badges = [];
+  const seen = new Set();
+
+  const push = (badge) => {
+    const key = badge.name || badge.emoji;
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    badges.push(badge);
+  };
 
   if (hasNitro) {
-    badges.push({ name: "NITRO", emoji: "💎", icon: BADGE_ICONS.nitro });
+    push({ name: "NITRO", emoji: "💎", icon: BADGE_ICONS.nitro });
   }
   if (hasBoost) {
-    badges.push({ name: "BOOST", emoji: "🚀", icon: BADGE_ICONS.boost });
+    push({ name: "BOOST", emoji: "🚀", icon: BADGE_ICONS.boost });
+  }
+
+  for (const badge of collectProfileBadges(profile)) {
+    push(badge);
   }
 
   for (const [bit, badge] of Object.entries(BADGE_MAP)) {
-    if (flags & Number(bit)) badges.push(badge);
+    if (flags & Number(bit)) {
+      const name = badge.name;
+      if ([...seen].some((key) => String(key).includes(name))) continue;
+      push(badge);
+    }
   }
 
   return badges;
@@ -222,19 +242,23 @@ function resolveBannerUrl(user, profile) {
   return `https://cdn.discordapp.com/banners/${user.id}/${bannerHash}.${extension}?size=4096`;
 }
 
-function buildProfileCard({ user, member, profile, executor = null, views = 0 }) {
+function buildProfileCard({ user, member, profile, executor = null, views = 0, guildId = null }) {
   const flags = user.publicFlags ?? user.public_flags ?? 0;
+  const targetGuildId = guildId ?? member?.guild?.id ?? profile?.guild_member?.guild_id ?? null;
+
   const hasNitro = resolveHasNitro(profile, user);
-  const hasBoost = resolveHasBoost(profile, member);
+  const hasBoostBadge = Boolean(resolveBoostBadgeSince(profile));
+  const boostingThisGuild = isBoostingGuild(profile, member, targetGuildId);
+  const hasBoost = hasBoostBadge || boostingThisGuild;
 
   const nitroSince = resolveNitroSince(profile, user);
-  const boostSince = resolveBoostBadgeSince(profile, member);
-  const guildBoostSince = resolveGuildBoostSince(profile, member);
+  const boostSince = resolveBoostBadgeSince(profile);
+  const guildBoostSince = resolveGuildBoostSince(profile, member, targetGuildId);
 
   const createdAt = user.createdAt ?? (user.createdTimestamp ? new Date(user.createdTimestamp) : null);
   const joinedAt = member?.joinedAt ?? member?.joined_at ?? profile?.guild_member?.joined_at ?? null;
 
-  const badges = getBadges(flags, { hasNitro, hasBoost });
+  const badges = getBadges(flags, { hasNitro, hasBoost, profile });
 
   const contaCriada = formatDateField(createdAt);
   const entrouServidor = formatDateField(joinedAt);
@@ -248,13 +272,29 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0 })
   const nitroProgress = attachEmojiToTier(nitroProgressRaw, "nitro", profile);
   const boostProgress = attachEmojiToTier(boostProgressRaw, "boost", profile);
 
+  const evolucao_impulso = buildTierTimeline(boostSince, BOOST_TIER_MONTHS, BOOST_TIER_NAMES).map((tier, index) => ({
+    ...tier,
+    ...(getBoostLevels()[index] ?? {}),
+  }));
+
+  const evolucao_nitro = buildTierTimeline(nitroSince, NITRO_TIER_MONTHS, NITRO_TIER_NAMES).map((tier, index) => ({
+    ...tier,
+    ...(getNitroLevels()[index] ?? {}),
+  }));
+
+  const extras = extractProfileExtras(profile, user, member);
+
   const boostEmojiInsignia = getTierEmoji(boostProgress?.atual);
   const nitroEmojiInsignia = getTierEmoji(nitroProgress?.atual);
   const insigniasParts = [];
   if (hasNitro) insigniasParts.push(nitroEmojiInsignia);
   if (hasBoost) insigniasParts.push(boostEmojiInsignia);
-  for (const b of badges.filter((b) => !["NITRO", "BOOST"].includes(b.name))) {
-    insigniasParts.push(b.emoji);
+
+  for (const badge of badges) {
+    if (["NITRO", "BOOST"].includes(badge.name)) continue;
+    if (badge.emoji && !insigniasParts.includes(badge.emoji)) {
+      insigniasParts.push(badge.emoji);
+    }
   }
   const insigniasTexto = insigniasParts.join(" ") || "Nenhuma";
 
@@ -289,6 +329,12 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0 })
     assinante_nitro_desde: nitroDesde,
     impulsionando_desde: impulsionandoDesde,
     impulsionando_servidor_desde: impulsionandoServidorDesde,
+    impulsiona_servidor_atual: boostingThisGuild,
+    impulsiona_globalmente: hasBoostBadge,
+    evolucao_impulso,
+    evolucao_nitro,
+    extras,
+    guild_id_consulta: targetGuildId,
     boost_nivel_maximo: boostProgress?.proxima?.texto === "Nível máximo atingido.",
     insignia_impulso_atual: boostProgress?.atual ?? null,
     proxima_insignia_impulso: boostProgress?.proxima ?? null,
@@ -345,8 +391,22 @@ function buildDiscordEmbed(card) {
 
   if (card.impulsionando_desde) {
     fields.push({
-      name: "📅 Impulsionando desde",
+      name: "📅 Impulsionando desde (insígnia global)",
       value: card.impulsionando_desde.texto,
+      inline: false,
+    });
+  }
+
+  if (card.impulsionando_servidor_desde) {
+    fields.push({
+      name: "📅 Boost neste servidor",
+      value: card.impulsionando_servidor_desde.texto,
+      inline: false,
+    });
+  } else if (card.guild_id_consulta && card.impulsiona_globalmente && !card.impulsiona_servidor_atual) {
+    fields.push({
+      name: "📅 Boost neste servidor",
+      value: "Este membro **não impulsiona** o servidor onde o comando foi usado.",
       inline: false,
     });
   }

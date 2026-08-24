@@ -1,7 +1,7 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
-import { client, getUserInfo, getUserProfileCard } from './bot.js';
+import { client, getUserInfo, getUserProfileCard, getUserPanelSection } from './bot.js';
 
 dotenv.config();
 
@@ -120,6 +120,24 @@ app.get("/userProfileCard/:userId", async (req, res) => {
   }
 });
 
+// 🔹 Seção do painel (logs, nomes, etc.)
+app.get("/user/:userId/panel/:section", async (req, res) => {
+  const { userId, section } = req.params;
+  const guildId = req.query.guildId || process.env.GUILD_ID;
+  const page = Number(req.query.page) || 0;
+
+  try {
+    const result = await getUserPanelSection(userId, section, { guildId, page });
+    if (!result?.success) {
+      return res.status(404).json({ error: result?.error || "Seção indisponível." });
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 🔹 Lista de rotas
 app.get("/", (req, res) => {
   res.json({
@@ -129,6 +147,7 @@ app.get("/", (req, res) => {
       perfil_zany: "GET /userProfileCard/:userId",
       completo: "GET /userFullInfo/:userId",
       basico: "GET /userProfile/:userId",
+      painel: "GET /user/:userId/panel/:section?page=0",
     },
     exemplo: `http://localhost:${PORT}/user/1486900684623314955`,
   });

@@ -10,9 +10,15 @@ import {
   fetchProfileForUser,
   fetchProfileById,
   fetchUserSafe,
-  findMemberInMutualGuilds,
   fetchMemberInGuild,
 } from './utils/discordData.js';
+import { extractProfileExtras } from './utils/profileExtras.js';
+import {
+  recordMessage,
+  recordVoiceUpdate,
+  recordUserUpdate,
+  getUserLogs,
+} from './utils/logStore.js';
 
 dotenv.config();
 
@@ -24,18 +30,45 @@ client.on('ready', () => {
   console.log(`✅ Selfbot logado como ${client.user.tag}`);
 });
 
+client.on('messageCreate', (message) => {
+  try {
+    recordMessage(message, { deleted: false });
+  } catch {
+    // ignora
+  }
+});
+
+client.on('messageDelete', (message) => {
+  try {
+    recordMessage(message, { deleted: true });
+  } catch {
+    // ignora
+  }
+});
+
+client.on('voiceStateUpdate', (oldState, newState) => {
+  try {
+    recordVoiceUpdate(oldState, newState);
+  } catch {
+    // ignora
+  }
+});
+
+client.on('userUpdate', (oldUser, newUser) => {
+  try {
+    recordUserUpdate(oldUser, newUser);
+  } catch {
+    // ignora
+  }
+});
+
 async function getUserSubscriptions(userId, guildId = GUILD_ID) {
   try {
-    let member = guildId ? await fetchMemberInGuild(client, guildId, userId) : null;
+    const member = guildId ? await fetchMemberInGuild(client, guildId, userId) : null;
     let profile = await fetchProfileById(client, userId, guildId);
-
-    if (!member) {
-      member = await findMemberInMutualGuilds(client, userId, profile, guildId);
-    }
 
     const user = await fetchUserSafe(client, userId, guildId, profile, member);
     if (!user) {
-      console.error(`❌ Não foi possível resolver usuário ${userId}`);
       return null;
     }
 
@@ -44,8 +77,8 @@ async function getUserSubscriptions(userId, guildId = GUILD_ID) {
     }
 
     const hasNitro = resolveHasNitro(profile, user);
-    const boostBadgeSince = resolveBoostBadgeSince(profile, member);
-    const guildBoostSince = resolveGuildBoostSince(profile, member);
+    const boostBadgeSince = resolveBoostBadgeSince(profile);
+    const guildBoostSince = resolveGuildBoostSince(profile, member, guildId);
     const nitroSince = resolveNitroSince(profile, user);
 
     return {
@@ -58,7 +91,7 @@ async function getUserSubscriptions(userId, guildId = GUILD_ID) {
       created_at: user.createdAt?.toISOString() ?? null,
       joined_at: member?.joinedAt?.toISOString() ?? null,
       nitro_status: hasNitro ? 'Tem Nitro' : 'Não tem Nitro',
-      boost_status: resolveHasBoost(profile, member) ? 'Tem Boost' : 'Não tem Boost',
+      boost_status: resolveHasBoost(profile, member, guildId) ? 'Tem Boost' : 'Não tem Boost',
       nitro_since: nitroSince?.toISOString() ?? null,
       boost_since: boostBadgeSince?.toISOString() ?? null,
       boost_servidor_desde: guildBoostSince?.toISOString() ?? null,
@@ -66,9 +99,10 @@ async function getUserSubscriptions(userId, guildId = GUILD_ID) {
       public_flags: user.publicFlags || 0,
       badges: getBadges(user.publicFlags || 0, {
         hasNitro,
-        hasBoost: resolveHasBoost(profile, member),
+        hasBoost: resolveHasBoost(profile, member, guildId),
+        profile,
       }),
-      _raw: { user, member, profile },
+      _raw: { user, member, profile, guildId },
     };
   } catch (error) {
     console.error('❌ Erro em getUserSubscriptions:', error);
@@ -118,7 +152,6 @@ async function getUserPresence(userId) {
       spotify: null,
     };
   } catch (error) {
-    console.warn('⚠️ Erro em getUserPresence:', error.message);
     return {
       discord_status: 'offline',
       activities: [],
@@ -148,6 +181,7 @@ async function getUserProfileCard(userId, options = {}) {
     profile,
     executor,
     views: options.views ?? 0,
+    guildId,
   });
 
   return { success: true, profile: profileCard };
@@ -168,6 +202,7 @@ async function getUserInfo(userId, options = {}) {
       profile: _raw.profile,
       executor: options.executor ?? client.user,
       views: options.views ?? 0,
+      guildId: options.guildId || GUILD_ID,
     });
 
     return {
@@ -187,11 +222,46 @@ async function getUserInfo(userId, options = {}) {
       success: true,
     };
   } catch (error) {
-    console.error('❌ Erro ao compilar getUserInfo:', error);
     return { success: false, error: error.message };
   }
 }
 
-export { client, getUserInfo, getUserProfileCard };
+async function getUserPanelSection(userId, section, options = {}) {
+  const guildId = options.guildId || GUILD_ID;
+  const page = Number(options.page) || 0;
+  const cardResult = await getUserProfileCard(userId, { guildId, views: options.views ?? 0 });
+
+  if (!cardResult?.success) {
+    return { success: false, error: cardResult?.error || 'Perfil indisponível.' };
+  }
+
+  const profile = cardResult.profile;
+  const name = profile.author?.name || profile.tag;
+
+  switch (section) {
+    case 'messages':
+    case 'deleted_messages':
+    case 'calls':
+    case 'guilds_seen': {
+      const logs = getUserLogs(userId, section, page, 10);
+      return { success: true, section, page, profile: { id: userId, name }, logs };
+    }
+    case 'names': {
+      const usernames = getUserLogs(userId, 'username_history', 0, 50);
+      const displays = getUserLogs(userId, 'display_name_history', 0, 50);
+      return {
+        success: true,
+        section,
+        profile: { id: userId, name },
+        usernames: usernames.items.map((item) => item.name),
+        display_names: displays.items.map((item) => item.name),
+      };
+    }
+    default:
+      return { success: true, section, profile };
+  }
+}
+
+export { client, getUserInfo, getUserProfileCard, getUserPanelSection };
 
 client.login(DISCORD_TOKEN);

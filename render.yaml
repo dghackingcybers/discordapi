@@ -17,3 +17,41 @@ services:
         sync: false
       - key: PORT
         value: 10000
+      - key: BOOST_EMOJI_1
+        sync: false
+      - key: BOOST_EMOJI_2
+        sync: false
+      - key: BOOST_EMOJI_3
+        sync: false
+      - key: BOOST_EMOJI_4
+        sync: false
+      - key: BOOST_EMOJI_5
+        sync: false
+      - key: BOOST_EMOJI_6
+        sync: false
+      - key: BOOST_EMOJI_7
+        sync: false
+      - key: BOOST_EMOJI_8
+        sync: false
+      - key: BOOST_EMOJI_9
+        sync: false
+      - key: NITRO_EMOJI_1
+        sync: false
+      - key: NITRO_EMOJI_2
+        sync: false
+      - key: NITRO_EMOJI_3
+        sync: false
+      - key: NITRO_EMOJI_4
+        sync: false
+      - key: NITRO_EMOJI_5
+        sync: false
+      - key: NITRO_EMOJI_6
+        sync: false
+      - key: NITRO_EMOJI_7
+        sync: false
+      - key: NITRO_EMOJI_8
+        sync: false
+      - key: BADGE_EMOJI_QUEST
+        sync: false
+      - key: BADGE_EMOJI_ACTIVE_DEV
+        sync: false

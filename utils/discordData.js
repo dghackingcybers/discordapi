@@ -5,31 +5,14 @@ function toDate(value) {
 }
 
 /**
- * Data global de boost (insígnia / premium_guild_since).
- * NÃO usar member.premiumSince como principal — ele só reflete o boost
- * naquele servidor específico e pode mostrar poucos meses mesmo com anos de boost.
+ * Data global da insígnia de boost (premium_guild_since).
+ * Nunca usar member.premiumSince aqui — isso é por servidor.
  */
-function resolveBoostBadgeSince(profile, member = null) {
+function resolveBoostBadgeSince(profile) {
   const candidates = [
     profile?.premium_guild_since,
     profile?.user?.premium_guild_since,
-  ];
-
-  for (const value of candidates) {
-    const date = toDate(value);
-    if (date) return date;
-  }
-
-  return resolveGuildBoostSince(profile, member);
-}
-
-/** Data de boost apenas no servidor consultado */
-function resolveGuildBoostSince(profile, member = null) {
-  const candidates = [
-    member?.premiumSince,
-    member?.premium_since,
-    profile?.guild_member?.premium_since,
-    profile?.premium_guild_since,
+    profile?.user_profile?.premium_guild_since,
   ];
 
   for (const value of candidates) {
@@ -38,6 +21,25 @@ function resolveGuildBoostSince(profile, member = null) {
   }
 
   return null;
+}
+
+/** Boost apenas no servidor do comando (guildId) */
+function resolveGuildBoostSince(profile, member = null, guildId = null) {
+  const memberGuildId = member?.guild?.id ?? member?.guildId ?? null;
+
+  if (member?.premiumSince && (!guildId || memberGuildId === guildId)) {
+    return toDate(member.premiumSince);
+  }
+
+  if (guildId && profile?.guild_member?.guild_id === guildId) {
+    return toDate(profile.guild_member.premium_since);
+  }
+
+  return null;
+}
+
+function isBoostingGuild(profile, member = null, guildId = null) {
+  return Boolean(resolveGuildBoostSince(profile, member, guildId));
 }
 
 function resolveNitroSince(profile, user = null) {
@@ -60,8 +62,8 @@ function resolveHasNitro(profile, user = null) {
   return Boolean(premiumType && premiumType !== 0) || Boolean(resolveNitroSince(profile, user));
 }
 
-function resolveHasBoost(profile, member = null) {
-  return Boolean(resolveBoostBadgeSince(profile, member) || resolveGuildBoostSince(profile, member));
+function resolveHasBoost(profile, member = null, guildId = null) {
+  return Boolean(resolveBoostBadgeSince(profile) || resolveGuildBoostSince(profile, member, guildId));
 }
 
 async function fetchMemberInGuild(client, guildId, userId) {
@@ -214,6 +216,7 @@ export {
   toDate,
   resolveBoostBadgeSince,
   resolveGuildBoostSince,
+  isBoostingGuild,
   resolveNitroSince,
   resolveHasNitro,
   resolveHasBoost,
