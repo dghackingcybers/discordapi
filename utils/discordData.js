@@ -136,41 +136,33 @@ function mergeProfiles(a, b) {
 }
 
 async function fetchProfileById(client, userId, guildId) {
-  const baseQuery = {
+  const query = {
     with_mutual_guilds: true,
-    with_mutual_friends: true,
     with_mutual_friends_count: true,
+    type: "modal",
     ...(guildId ? { guild_id: guildId } : {}),
   };
 
-  const queries = [
-    baseQuery,
-    { ...baseQuery, type: "popout" },
-    { ...baseQuery, type: "modal" },
-  ];
+  try {
+    return await client.api.users(userId).profile.get({ query });
+  } catch (error) {
+    console.warn("⚠️ Perfil indisponível:", error.message);
+  }
 
-  if (guildId) {
-    queries.push({
-      with_mutual_guilds: true,
-      with_mutual_friends: true,
-      with_mutual_friends_count: true,
+  if (!guildId) return null;
+
+  try {
+    return await client.api.users(userId).profile.get({
+      query: {
+        with_mutual_guilds: true,
+        with_mutual_friends_count: true,
+        type: "modal",
+      },
     });
+  } catch (error) {
+    console.warn("⚠️ Perfil global indisponível:", error.message);
+    return null;
   }
-
-  let merged = null;
-
-  for (const query of queries) {
-    try {
-      const profile = await client.api.users(userId).profile.get({ query });
-      merged = mergeProfiles(merged, profile);
-    } catch (error) {
-      if (!merged) {
-        console.warn(`⚠️ Perfil indisponível (${query.type ?? "default"}):`, error.message);
-      }
-    }
-  }
-
-  return merged;
 }
 
 async function fetchUserSafe(client, userId, guildId, profile = null, member = null) {
@@ -202,16 +194,7 @@ async function fetchUserSafe(client, userId, guildId, profile = null, member = n
   try {
     return await client.users.fetch(userId);
   } catch (error) {
-    console.warn("⚠️ users.fetch falhou, tentando servidores em comum:", error.message);
-  }
-
-  for (const guild of client.guilds.cache.values()) {
-    try {
-      const guildMember = await guild.members.fetch(userId);
-      if (guildMember?.user) return guildMember.user;
-    } catch {
-      // tenta próximo servidor
-    }
+    console.warn("⚠️ users.fetch falhou:", error.message);
   }
 
   return null;
@@ -223,23 +206,30 @@ async function fetchProfileForUser(user, guildId, client) {
 }
 
 async function findMemberInMutualGuilds(client, userId, profile, preferredGuildId) {
-  const guildIds = new Set();
+  const guildIds = [];
 
-  if (preferredGuildId) guildIds.add(preferredGuildId);
-  if (profile?.guild_member?.guild_id) guildIds.add(profile.guild_member.guild_id);
-  if (profile?.guild_id) guildIds.add(profile.guild_id);
+  const pushId = (id) => {
+    if (id && !guildIds.includes(id)) guildIds.push(id);
+  };
+
+  pushId(preferredGuildId);
+  pushId(profile?.guild_member?.guild_id);
+  pushId(profile?.guild_id);
 
   for (const guild of profile?.mutual_guilds ?? []) {
-    if (guild?.id) guildIds.add(guild.id);
+    pushId(guild?.id);
+    if (guildIds.length >= 6) break;
   }
 
-  for (const guildId of client.guilds.cache.keys()) {
-    guildIds.add(guildId);
+  if (preferredGuildId) {
+    const member = await fetchMemberInGuild(client, preferredGuildId, userId);
+    if (member) return member;
   }
 
   let bestMember = null;
 
   for (const guildId of guildIds) {
+    if (guildId === preferredGuildId) continue;
     const member = await fetchMemberInGuild(client, guildId, userId);
     if (!member) continue;
 

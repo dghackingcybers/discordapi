@@ -285,66 +285,23 @@ async function runPool(items, worker, concurrency = 4) {
 }
 
 async function bootstrapAvatarHistory(client) {
-  const guildId = process.env.GUILD_ID;
-  if (!guildId || !client) return { scanned: 0, saved: 0 };
-
-  const guild = client.guilds.cache.get(guildId);
-  if (!guild) {
-    console.warn(`⚠️ [AvatarStore] Guild ${guildId} não encontrada para bootstrap.`);
-    return { scanned: 0, saved: 0 };
-  }
+  if (!client) return { scanned: 0, saved: 0 };
 
   let scanned = 0;
   let saved = 0;
   const processed = new Set();
 
-  try {
-    await guild.members.fetch();
-  } catch (error) {
-    console.warn("⚠️ [AvatarStore] Falha ao listar membros:", error.message);
-    return { scanned: 0, saved: 0 };
-  }
-
-  const members = [...guild.members.cache.values()].filter((m) => m.user?.id && !m.user.bot);
-
-  await runPool(
-    members,
-    async (member) => {
-      if (processed.has(member.user.id)) return;
+  for (const guild of client.guilds.cache.values()) {
+    for (const member of guild.members.cache.values()) {
+      if (!member.user?.id || member.user.bot || processed.has(member.user.id)) continue;
       processed.add(member.user.id);
       scanned += 1;
-
       const result = await ensureAvatarRecorded(member.user, { archive: false });
       if (result.saved) saved += 1;
-    },
-    BOOTSTRAP_CONCURRENCY,
-  );
-
-  for (const guild of client.guilds.cache.values()) {
-    if (guild.id === guildId) continue;
-
-    try {
-      await guild.members.fetch();
-    } catch {
-      continue;
     }
-
-    const extra = [...guild.members.cache.values()].filter((m) => m.user?.id && !m.user.bot);
-
-    await runPool(
-      extra,
-      async (member) => {
-        if (processed.has(member.user.id)) return;
-        processed.add(member.user.id);
-        scanned += 1;
-        const result = await ensureAvatarRecorded(member.user, { archive: false });
-        if (result.saved) saved += 1;
-      },
-      BOOTSTRAP_CONCURRENCY,
-    );
   }
 
-  console.log(`✅ [AvatarStore] Bootstrap: ${scanned} usuários, ${saved} ícones novos.`);
+  console.log(`✅ [AvatarStore] Bootstrap (cache): ${scanned} usuários, ${saved} ícones novos.`);
   return { scanned, saved };
 }
 

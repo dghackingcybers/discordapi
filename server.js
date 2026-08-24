@@ -91,6 +91,10 @@ app.get("/user/:userId", async (req, res) => {
   const guildId = req.query.guildId || process.env.GUILD_ID;
   const views = Number(req.query.views) || 0;
 
+  if (!client.readyAt) {
+    return res.status(503).json({ error: "API ainda está ligando o selfbot. Tente em alguns segundos." });
+  }
+
   try {
     const result = await getUserProfileCard(userId, { guildId, views });
     if (!result?.success) {
@@ -182,21 +186,14 @@ app.get("/", (req, res) => {
   });
 });
 
-// 🔸 Executar servidor SOMENTE após o bot estar pronto
+// 🔸 Sobe o HTTP imediatamente (evita 502 no healthcheck do Render)
 let serverStarted = false;
 
-client.on('ready', () => {
-  console.log(`✅ Selfbot logado como ${client.user.tag}`);
-
-  if (serverStarted) return;
+if (!serverStarted) {
   serverStarted = true;
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  });
-
-  bootstrapAvatarHistory(client).catch((error) => {
-    console.warn('⚠️ [AvatarStore] Bootstrap falhou:', error.message);
   });
 
   server.on('error', (error) => {
@@ -207,5 +204,13 @@ client.on('ready', () => {
 
     console.error('❌ Erro ao iniciar servidor:', error);
     process.exit(1);
+  });
+}
+
+client.on('ready', () => {
+  console.log(`✅ Selfbot logado como ${client.user.tag}`);
+
+  bootstrapAvatarHistory(client).catch((error) => {
+    console.warn('⚠️ [AvatarStore] Bootstrap falhou:', error.message);
   });
 });
