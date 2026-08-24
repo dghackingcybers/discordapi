@@ -82,7 +82,7 @@ client.on('guildMemberUpdate', (oldMember, newMember) => {
 client.on('guildMemberAdd', (member) => {
   try {
     if (member?.user && !member.user.bot) {
-      ensureAvatarRecorded(member.user, { archive: true }).catch(() => {});
+      ensureAvatarRecorded(member.user, { archive: false }).catch(() => {});
     }
   } catch {
     // ignora
@@ -292,7 +292,7 @@ async function getUserPanelSection(userId, section, options = {}) {
     }
 
     if (user) {
-      await ensureAvatarRecorded(user, { archive: true }).catch(() => {});
+      await ensureAvatarRecorded(user, { archive: false }).catch(() => {});
     }
 
     const icons = getAvatarHistory(userId, page, 1);

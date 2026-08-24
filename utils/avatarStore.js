@@ -13,7 +13,7 @@ let avatarDb = null;
 const userLocks = new Map();
 
 function defaultAvatarDb() {
-  return { users: {} };
+  return { users: {}, archivedIndex: {} };
 }
 
 function loadAvatarDb() {
@@ -23,7 +23,8 @@ function loadAvatarDb() {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
     if (fs.existsSync(AVATARS_FILE)) {
       avatarDb = JSON.parse(fs.readFileSync(AVATARS_FILE, "utf8"));
-      if (!avatarDb.users) avatarDb = defaultAvatarDb();
+      if (!avatarDb.users) avatarDb.users = {};
+      if (!avatarDb.archivedIndex) avatarDb.archivedIndex = {};
       return avatarDb;
     }
   } catch {
@@ -110,12 +111,38 @@ async function downloadAvatarBuffer(url) {
   return Buffer.from(await response.arrayBuffer());
 }
 
+function archiveRegistryKey(userId, hash) {
+  return `${userId}:${normalizeHash(hash)}`;
+}
+
+function getArchivedRecord(userId, hash) {
+  loadAvatarDb();
+  return avatarDb.archivedIndex[archiveRegistryKey(userId, hash)] ?? null;
+}
+
+function markArchivedRecord(userId, hash, data) {
+  loadAvatarDb();
+  avatarDb.archivedIndex[archiveRegistryKey(userId, hash)] = {
+    ...data,
+    hash: normalizeHash(hash),
+    userId,
+    at: data?.at ?? Date.now(),
+  };
+  saveAvatarDb();
+}
+
 async function archiveAvatarToChannel(user, hash, sourceUrl) {
   const channelId = process.env.ARCHIVE_CHANNEL_ID;
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!channelId || !botToken || !hash || hash === "default") return null;
 
-  const url = sourceUrl || buildAvatarUrl(user.id, hash);
+  const normalizedHash = normalizeHash(hash);
+  const existingRecord = getArchivedRecord(user.id, normalizedHash);
+  if (existingRecord?.archiveUrl) {
+    return { ...existingRecord, reused: true };
+  }
+
+  const url = sourceUrl || buildAvatarUrl(user.id, normalizedHash);
   const buffer = await downloadAvatarBuffer(url);
   if (!buffer?.length) return null;
 
@@ -143,11 +170,14 @@ async function archiveAvatarToChannel(user, hash, sourceUrl) {
     const attachment = message.attachments?.[0];
     if (!attachment?.url) return null;
 
-    return {
+    const result = {
       archiveUrl: attachment.url,
       archiveMessageId: message.id,
       archiveChannelId: channelId,
     };
+
+    markArchivedRecord(user.id, normalizedHash, result);
+    return result;
   } catch {
     return null;
   }
@@ -168,46 +198,41 @@ function writeUserEntries(userId, entries) {
   saveAvatarDb();
 }
 
-async function ensureAvatarRecorded(user, { archive = true } = {}) {
+async function ensureAvatarRecorded(user, { archive = false } = {}) {
   if (!user?.id || user.bot) return { saved: false, reason: "skip" };
 
   return withUserLock(user.id, async () => {
     const hash = normalizeHash(user);
     const history = getUserEntries(user.id);
     const existing = history.find((entry) => normalizeHash(entry.hash) === hash);
+    const archivedRecord = getArchivedRecord(user.id, hash);
 
     if (existing) {
-      if (archive && !existing.archiveUrl && hash !== "default") {
-        const archived = await archiveAvatarToChannel(user, hash, existing.url);
-        if (archived) {
-          const updated = history.map((entry) =>
-            normalizeHash(entry.hash) === hash ? { ...entry, ...archived } : entry,
-          );
-          writeUserEntries(user.id, updated);
-          return { saved: false, archived: true };
-        }
+      if (archivedRecord?.archiveUrl && !existing.archiveUrl) {
+        const updated = history.map((entry) =>
+          normalizeHash(entry.hash) === hash
+            ? { ...entry, ...archivedRecord }
+            : entry,
+        );
+        writeUserEntries(user.id, updated);
       }
+
       return { saved: false, reason: "exists" };
     }
 
     const url = buildAvatarUrl(user.id, hash);
-    let archiveData = null;
-
-    if (archive && hash !== "default") {
-      archiveData = await archiveAvatarToChannel(user, hash, url);
-    }
 
     history.push({
       hash,
       url,
       detectedAt: Date.now(),
-      archiveUrl: archiveData?.archiveUrl ?? null,
-      archiveMessageId: archiveData?.archiveMessageId ?? null,
-      archiveChannelId: archiveData?.archiveChannelId ?? null,
+      archiveUrl: null,
+      archiveMessageId: null,
+      archiveChannelId: null,
     });
 
     writeUserEntries(user.id, history);
-    return { saved: true, archived: !!archiveData?.archiveUrl };
+    return { saved: true, archived: false };
   });
 }
 
@@ -219,7 +244,8 @@ function recordAvatarUpdate(oldUser, newUser) {
 
   if (oldHash === newHash) return;
 
-  ensureAvatarRecorded(newUser, { archive: true }).catch(() => {});
+  // Só registra no JSON — o canal #saveicon fica por conta do bot local.
+  ensureAvatarRecorded(newUser, { archive: false }).catch(() => {});
 }
 
 function getAvatarHistory(userId, page = 0, pageSize = 10) {
@@ -288,7 +314,7 @@ async function bootstrapAvatarHistory(client) {
       processed.add(member.user.id);
       scanned += 1;
 
-      const result = await ensureAvatarRecorded(member.user, { archive: true });
+      const result = await ensureAvatarRecorded(member.user, { archive: false });
       if (result.saved) saved += 1;
     },
     BOOTSTRAP_CONCURRENCY,

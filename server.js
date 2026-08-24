@@ -138,7 +138,7 @@ app.get("/user/:userId/avatars", async (req, res) => {
     }
 
     if (user) {
-      await ensureAvatarRecorded(user, { archive: true });
+      await ensureAvatarRecorded(user, { archive: false });
     }
 
     const icons = getAvatarHistory(userId, page, pageSize);
