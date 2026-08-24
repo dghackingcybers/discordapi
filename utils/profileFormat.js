@@ -8,7 +8,7 @@ import {
 } from "./discordData.js";
 import { attachEmojiToTier, getBoostLevels, getNitroLevels, getTierEmoji } from "./badgeEmojis.js";
 import { buildTierTimeline, BOOST_TIER_NAMES, NITRO_TIER_NAMES } from "./tierTimeline.js";
-import { extractProfileExtras } from "./profileExtras.js";
+import { extractProfileExtras, resolveProfileBio, resolveProfilePronouns } from "./profileExtras.js";
 import { collectProfileBadges } from "./profileBadges.js";
 
 const NITRO_TIER_MONTHS = [1, 3, 6, 12, 24, 36, 60, 72];
@@ -284,6 +284,9 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0, g
 
   const extras = extractProfileExtras(profile, user, member);
 
+  const bio = resolveProfileBio(profile, member) ?? extras.bio;
+  const pronouns = resolveProfilePronouns(profile) ?? extras.pronouns;
+
   const boostEmojiInsignia = getTierEmoji(boostProgress?.atual);
   const nitroEmojiInsignia = getTierEmoji(nitroProgress?.atual);
   const insigniasParts = [];
@@ -306,9 +309,6 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0, g
     null;
 
   const bannerUrl = resolveBannerUrl(user, profile);
-
-  const bio = profile?.user?.bio ?? profile?.bio ?? profile?.guild_member?.bio ?? null;
-  const pronouns = profile?.pronouns ?? profile?.user_profile?.pronouns ?? null;
 
   const authorName = buildAuthorName(user);
   const mention = `<@${user.id}>`;
@@ -334,6 +334,7 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0, g
     evolucao_impulso,
     evolucao_nitro,
     extras,
+    perfil_privado_discord: extras.perfil_privado_discord,
     guild_id_consulta: targetGuildId,
     boost_nivel_maximo: boostProgress?.proxima?.texto === "Nível máximo atingido.",
     insignia_impulso_atual: boostProgress?.atual ?? null,
@@ -364,6 +365,30 @@ function buildDiscordEmbed(card) {
     { name: "ID", value: `\`${card.id}\``, inline: true },
     { name: "Insígnias", value: card.insignias_texto, inline: false },
   ];
+
+  if (card.perfil_privado_discord) {
+    fields.push({
+      name: "🔒 Perfil privado no Discord",
+      value: "Dados exibidos via **API (self token)** — visível mesmo com perfil privado.",
+      inline: false,
+    });
+  }
+
+  if (card.bio) {
+    fields.push({
+      name: "📓 Bio",
+      value: card.bio.slice(0, 1024),
+      inline: false,
+    });
+  }
+
+  if (card.pronouns) {
+    fields.push({
+      name: "📆 Pronome",
+      value: card.pronouns,
+      inline: true,
+    });
+  }
 
   if (card.conta_criada_em) {
     fields.push({

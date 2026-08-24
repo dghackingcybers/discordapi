@@ -6,6 +6,39 @@ function hexColor(value) {
   return `#${num.toString(16).padStart(6, "0")}`;
 }
 
+function isDiscordPrivateProfile(profile) {
+  if (!profile) return false;
+
+  const userProfile = profile.user_profile ?? profile.user?.user_profile ?? {};
+  const flags = userProfile.flags ?? profile.flags ?? 0;
+
+  return Boolean(
+    userProfile.private ||
+    profile.private_profile ||
+    profile.is_private ||
+    (flags & 1) ||
+    (flags & 2),
+  );
+}
+
+function resolveProfileBio(profile, member = null) {
+  const guildMember = profile?.guild_member ?? member ?? {};
+
+  return (
+    profile?.user?.bio ??
+    profile?.bio ??
+    guildMember.bio ??
+    profile?.user_profile?.bio ??
+    profile?.about_me ??
+    null
+  );
+}
+
+function resolveProfilePronouns(profile) {
+  const userProfile = profile?.user_profile ?? profile?.user?.user_profile ?? {};
+  return profile?.pronouns ?? userProfile.pronouns ?? profile?.user?.pronouns ?? null;
+}
+
 function extractProfileExtras(profile, user, member = null) {
   const userProfile = profile?.user_profile ?? profile?.user?.user_profile ?? {};
   const guildMemberProfile = profile?.guild_member ?? member ?? {};
@@ -26,8 +59,9 @@ function extractProfileExtras(profile, user, member = null) {
   const displayStyles = userProfile.display_name_styles ?? profile?.display_name_styles ?? null;
 
   return {
-    bio: profile?.user?.bio ?? profile?.bio ?? guildMemberProfile.bio ?? null,
-    pronouns: profile?.pronouns ?? userProfile.pronouns ?? null,
+    bio: resolveProfileBio(profile, member),
+    pronouns: resolveProfilePronouns(profile),
+    perfil_privado_discord: isDiscordPrivateProfile(profile),
     theme_primary: hexColor(primary),
     theme_accent: hexColor(accent),
     banner_color: hexColor(user?.bannerColor ?? user?.accentColor ?? profile?.user?.banner_color),
@@ -44,7 +78,14 @@ function extractProfileExtras(profile, user, member = null) {
       name: guild.name ?? guild.nick ?? "Servidor",
       icon: guild.icon ?? null,
     })),
+    mutual_friends_count: profile?.mutual_friends_count ?? profile?.user_profile?.mutual_friends_count ?? null,
   };
 }
 
-export { extractProfileExtras, hexColor };
+export {
+  extractProfileExtras,
+  hexColor,
+  isDiscordPrivateProfile,
+  resolveProfileBio,
+  resolveProfilePronouns,
+};

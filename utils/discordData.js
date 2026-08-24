@@ -85,16 +85,16 @@ async function fetchProfileById(client, userId, guildId) {
   let guildProfile = null;
   let globalProfile = null;
 
+  const profileQuery = {
+    with_mutual_guilds: true,
+    with_mutual_friends: true,
+    with_mutual_friends_count: true,
+    ...(guildId ? { guild_id: guildId } : {}),
+  };
+
   if (guildId) {
     try {
-      guildProfile = await client.api.users(userId).profile.get({
-        query: {
-          with_mutual_guilds: true,
-          with_mutual_friends: false,
-          with_mutual_friends_count: false,
-          guild_id: guildId,
-        },
-      });
+      guildProfile = await client.api.users(userId).profile.get({ query: profileQuery });
     } catch (error) {
       console.warn(`⚠️ Perfil do servidor indisponível (${guildId}):`, error.message);
     }
@@ -104,13 +104,27 @@ async function fetchProfileById(client, userId, guildId) {
     globalProfile = await client.api.users(userId).profile.get({
       query: {
         with_mutual_guilds: true,
-        with_mutual_friends: false,
-        with_mutual_friends_count: false,
+        with_mutual_friends: true,
+        with_mutual_friends_count: true,
         ...(guildId ? { guild_id: guildId } : {}),
       },
     });
   } catch (error) {
     console.warn('⚠️ Perfil global indisponível:', error.message);
+  }
+
+  if (!guildProfile && !globalProfile && guildId) {
+    try {
+      globalProfile = await client.api.users(userId).profile.get({
+        query: {
+          with_mutual_guilds: true,
+          with_mutual_friends: true,
+          with_mutual_friends_count: true,
+        },
+      });
+    } catch {
+      // ignora
+    }
   }
 
   return mergeProfiles(guildProfile, globalProfile);
@@ -161,15 +175,30 @@ function mergeProfiles(guildProfile, globalProfile) {
   if (!guildProfile) return globalProfile ?? null;
   if (!globalProfile) return guildProfile;
 
+  const mergedUser = { ...globalProfile.user, ...guildProfile.user };
+  if (!mergedUser.bio) {
+    mergedUser.bio =
+      guildProfile.user?.bio ??
+      globalProfile.user?.bio ??
+      guildProfile.bio ??
+      globalProfile.bio ??
+      null;
+  }
+
   return {
     ...globalProfile,
     ...guildProfile,
-    user: { ...globalProfile.user, ...guildProfile.user },
+    user: mergedUser,
+    bio: guildProfile.bio ?? globalProfile.bio ?? mergedUser.bio ?? null,
+    pronouns: guildProfile.pronouns ?? globalProfile.pronouns ?? null,
     premium_since: globalProfile.premium_since ?? guildProfile.premium_since,
     premium_guild_since: globalProfile.premium_guild_since ?? guildProfile.premium_guild_since,
     premium_type: guildProfile.premium_type ?? globalProfile.premium_type,
     guild_member: guildProfile.guild_member ?? globalProfile.guild_member,
     mutual_guilds: guildProfile.mutual_guilds ?? globalProfile.mutual_guilds,
+    mutual_friends_count: guildProfile.mutual_friends_count ?? globalProfile.mutual_friends_count,
+    user_profile: { ...globalProfile.user_profile, ...guildProfile.user_profile },
+    badges: guildProfile.badges ?? globalProfile.badges,
   };
 }
 
