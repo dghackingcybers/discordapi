@@ -19,6 +19,12 @@ import {
   recordUserUpdate,
   getUserLogs,
 } from './utils/logStore.js';
+import {
+  recordAvatarUpdate,
+  ensureAvatarRecorded,
+  getAvatarHistory,
+  bootstrapAvatarHistory,
+} from './utils/avatarStore.js';
 
 dotenv.config();
 
@@ -57,6 +63,27 @@ client.on('voiceStateUpdate', (oldState, newState) => {
 client.on('userUpdate', (oldUser, newUser) => {
   try {
     recordUserUpdate(oldUser, newUser);
+    recordAvatarUpdate(oldUser, newUser);
+  } catch {
+    // ignora
+  }
+});
+
+client.on('guildMemberUpdate', (oldMember, newMember) => {
+  try {
+    if (oldMember?.user && newMember?.user) {
+      recordAvatarUpdate(oldMember.user, newMember.user);
+    }
+  } catch {
+    // ignora
+  }
+});
+
+client.on('guildMemberAdd', (member) => {
+  try {
+    if (member?.user && !member.user.bot) {
+      ensureAvatarRecorded(member.user, { archive: true }).catch(() => {});
+    }
   } catch {
     // ignora
   }
@@ -254,6 +281,30 @@ async function getUserPanelSection(userId, section, options = {}) {
   const profile = cardResult.profile;
   const name = profile.author?.name || profile.tag;
 
+  if (section === 'icons') {
+    let user = client.users.cache.get(userId);
+    if (!user) {
+      try {
+        user = await client.users.fetch(userId);
+      } catch {
+        user = null;
+      }
+    }
+
+    if (user) {
+      await ensureAvatarRecorded(user, { archive: true }).catch(() => {});
+    }
+
+    const icons = getAvatarHistory(userId, page, 1);
+    return {
+      success: true,
+      section,
+      page,
+      profile: { id: userId, name, thumbnail: profile.thumbnail },
+      icons,
+    };
+  }
+
   switch (section) {
     case 'messages':
     case 'deleted_messages':
@@ -278,6 +329,6 @@ async function getUserPanelSection(userId, section, options = {}) {
   }
 }
 
-export { client, getUserInfo, getUserProfileCard, getUserPanelSection };
+export { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory };
 
 client.login(DISCORD_TOKEN);

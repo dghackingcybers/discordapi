@@ -57,3 +57,5 @@ services:
         sync: false
       - key: BADGE_EMOJI_EARLY_SUPPORTER
         sync: false
+      - key: ARCHIVE_CHANNEL_ID
+        sync: false

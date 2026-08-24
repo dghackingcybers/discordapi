@@ -1,7 +1,8 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
-import { client, getUserInfo, getUserProfileCard, getUserPanelSection } from './bot.js';
+import { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory } from './bot.js';
+import { bootstrapAvatarHistory, ensureAvatarRecorded } from './utils/avatarStore.js';
 
 dotenv.config();
 
@@ -120,6 +121,33 @@ app.get("/userProfileCard/:userId", async (req, res) => {
   }
 });
 
+// 🔹 Ícones antigos (histórico de avatares)
+app.get("/user/:userId/avatars", async (req, res) => {
+  const { userId } = req.params;
+  const page = Number(req.query.page) || 0;
+  const pageSize = Math.min(Number(req.query.limit) || 10, 50);
+
+  try {
+    let user = client.users.cache.get(userId);
+    if (!user) {
+      try {
+        user = await client.users.fetch(userId);
+      } catch {
+        user = null;
+      }
+    }
+
+    if (user) {
+      await ensureAvatarRecorded(user, { archive: true });
+    }
+
+    const icons = getAvatarHistory(userId, page, pageSize);
+    res.json({ success: true, userId, icons });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // 🔹 Seção do painel (logs, nomes, etc.)
 app.get("/user/:userId/panel/:section", async (req, res) => {
   const { userId, section } = req.params;
@@ -148,6 +176,7 @@ app.get("/", (req, res) => {
       completo: "GET /userFullInfo/:userId",
       basico: "GET /userProfile/:userId",
       painel: "GET /user/:userId/panel/:section?page=0",
+      avatars: "GET /user/:userId/avatars?page=0",
     },
     exemplo: `http://localhost:${PORT}/user/1486900684623314955`,
   });
@@ -164,6 +193,10 @@ client.on('ready', () => {
 
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  });
+
+  bootstrapAvatarHistory(client).catch((error) => {
+    console.warn('⚠️ [AvatarStore] Bootstrap falhou:', error.message);
   });
 
   server.on('error', (error) => {
