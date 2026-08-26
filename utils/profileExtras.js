@@ -71,6 +71,15 @@ function resolveServerTag(profile, user) {
   return null;
 }
 
+function resolvePrimaryGuild(profile, user) {
+  return user?.primary_guild ?? profile?.user?.primary_guild ?? profile?.primary_guild ?? null;
+}
+
+function buildServerTagBadgeUrl(guildId, badgeHash) {
+  if (!guildId || !badgeHash) return null;
+  return `https://cdn.discordapp.com/guild-tag-badges/${guildId}/${badgeHash}.png?size=128`;
+}
+
 function extractProfileExtras(profile, user, member = null) {
   const userProfile = profile?.user_profile ?? profile?.user?.user_profile ?? {};
   const guildMemberProfile = profile?.guild_member_profile ?? profile?.guild_member ?? member ?? {};
@@ -95,6 +104,21 @@ function extractProfileExtras(profile, user, member = null) {
 
   const displayStyles = userProfile.display_name_styles ?? profile?.display_name_styles ?? null;
   const serverTag = resolveServerTag(profile, user);
+  const primaryGuild = resolvePrimaryGuild(profile, user);
+  const tagGuildId =
+    primaryGuild?.identity_guild_id ??
+    primaryGuild?.identityGuildId ??
+    profile?.guild_tag?.guild_id ??
+    null;
+  const tagBadge =
+    primaryGuild?.badge ??
+    profile?.guild_tag?.badge ??
+    guildMemberProfile.tag?.badge ??
+    null;
+  const tagBadgeUrl =
+    guildMemberProfile.tag?.url ??
+    profile?.guild_tag?.url ??
+    buildServerTagBadgeUrl(tagGuildId, tagBadge);
 
   return {
     bio: resolveProfileBio(profile, member),
@@ -109,7 +133,10 @@ function extractProfileExtras(profile, user, member = null) {
     display_primary: hexColor(displayStyles?.colors?.[0] ?? displayStyles?.primary_color),
     display_secondary: hexColor(displayStyles?.colors?.[1] ?? displayStyles?.secondary_color),
     server_tag: serverTag,
-    server_tag_url: guildMemberProfile.tag?.url ?? profile?.guild_tag?.url ?? null,
+    server_tag_url: tagBadgeUrl,
+    server_tag_guild_id: tagGuildId ? String(tagGuildId) : null,
+    server_tag_badge: tagBadge,
+    server_tag_enabled: primaryGuild?.identity_enabled ?? primaryGuild?.identityEnabled ?? null,
     connections,
     mutual_guilds: (profile?.mutual_guilds ?? []).map((guild) => ({
       id: guild.id,
@@ -128,4 +155,6 @@ export {
   resolveProfileBio,
   resolveProfilePronouns,
   resolveServerTag,
+  resolvePrimaryGuild,
+  buildServerTagBadgeUrl,
 };
