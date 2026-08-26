@@ -1,34 +1,47 @@
-# Script para subir o projeto no GitHub
+# Script para subir o discordapi no GitHub (Render puxa automático)
 # Repo: https://github.com/dghackingcybers/discordapi
 
+$ErrorActionPreference = "Stop"
 $git = "C:\Program Files\Git\bin\git.exe"
-$repo = "https://github.com/dghackingcybers/discordapi.git"
+if (-not (Test-Path $git)) { $git = "git" }
 
+$repo = "https://github.com/dghackingcybers/discordapi.git"
 Set-Location "$PSScriptRoot"
 
-function Run-Git {
-  param([string[]]$GitArgs)
-  & $git @GitArgs
-  return $LASTEXITCODE
-}
+Write-Host "==> Status" -ForegroundColor Cyan
+& $git status --short
 
 $remotes = & $git remote
 if ($remotes -notcontains "origin") {
-  Run-Git @("remote", "add", "origin", $repo) | Out-Null
+  & $git remote add origin $repo
 }
 
-Run-Git @("branch", "-M", "main") | Out-Null
+& $git branch -M main
 
-Write-Host "Enviando para $repo ..." -ForegroundColor Cyan
-$pushCode = Run-Git @("push", "-u", "origin", "main")
+$pending = & $git status --porcelain
+if ($pending) {
+  $msg = $args[0]
+  if (-not $msg) {
+    $msg = "Update API $(Get-Date -Format 'yyyy-MM-dd HH:mm')"
+  }
 
-if ($pushCode -eq 0) {
+  Write-Host "==> Commit: $msg" -ForegroundColor Cyan
+  & $git add -A
+  & $git commit -m "$msg"
+} else {
+  Write-Host "==> Nada novo pra commit" -ForegroundColor Yellow
+}
+
+Write-Host "==> Push origin main (Render redeploy automático se estiver linkado)" -ForegroundColor Cyan
+& $git push -u origin main
+
+if ($LASTEXITCODE -eq 0) {
   Write-Host ""
-  Write-Host "Pronto! Repo publicado em $repo" -ForegroundColor Green
+  Write-Host "OK! GitHub atualizado: $repo" -ForegroundColor Green
+  Write-Host "No Render: Dashboard -> discordapi -> Events (deve aparecer Deploy)." -ForegroundColor Green
+  Write-Host "Se nao auto-deployar: Manual Deploy -> Deploy latest commit." -ForegroundColor Yellow
   exit 0
 }
 
-Write-Host ""
-Write-Host "Push falhou. Rode manualmente:" -ForegroundColor Yellow
-Write-Host '  & "C:\Program Files\Git\bin\git.exe" push -u origin main'
+Write-Host "Push falhou. Confira login/token do GitHub." -ForegroundColor Red
 exit 1

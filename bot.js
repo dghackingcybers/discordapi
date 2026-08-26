@@ -18,6 +18,8 @@ import {
   recordVoiceUpdate,
   recordUserUpdate,
   getUserLogs,
+  findUserIdByUsername,
+  indexUsername,
 } from './utils/logStore.js';
 import {
   recordAvatarUpdate,
@@ -329,6 +331,96 @@ async function getUserPanelSection(userId, section, options = {}) {
   }
 }
 
-export { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory };
+async function lookupUserByUsername(query, preferredGuildId = GUILD_ID) {
+  const handle = String(query || '')
+    .trim()
+    .replace(/^@+/, '')
+    .toLowerCase();
+
+  if (!handle || handle.length < 2) {
+    return { success: false, error: 'Username inválido.' };
+  }
+
+  // 1) índice / histórico da API
+  const indexedId = findUserIdByUsername(handle);
+  if (indexedId) {
+    try {
+      const user = await client.users.fetch(indexedId);
+      return {
+        success: true,
+        id: user.id,
+        username: user.username,
+        global_name: user.globalName ?? null,
+        source: 'history',
+      };
+    } catch {
+      // continua
+    }
+  }
+
+  // 2) cache do selfbot
+  const cached = client.users.cache.find(
+    (user) =>
+      user.username?.toLowerCase() === handle ||
+      user.globalName?.toLowerCase() === handle,
+  );
+  if (cached) {
+    indexUsername(cached.id, cached.username);
+    if (cached.globalName) indexUsername(cached.id, cached.globalName);
+    return {
+      success: true,
+      id: cached.id,
+      username: cached.username,
+      global_name: cached.globalName ?? null,
+      source: 'cache',
+    };
+  }
+
+  // 3) busca em todos os servidores do selfbot (Search Guild Members)
+  const guilds = [...client.guilds.cache.values()];
+  if (preferredGuildId) {
+    guilds.sort((a, b) => Number(b.id === preferredGuildId) - Number(a.id === preferredGuildId));
+  }
+
+  for (const guild of guilds.slice(0, 40)) {
+    try {
+      const found = await guild.members.fetch({ query: handle, limit: 25 });
+      const list = [...found.values()];
+
+      const exact = list.find(
+        (member) =>
+          member.user.username?.toLowerCase() === handle ||
+          member.user.globalName?.toLowerCase() === handle ||
+          member.displayName?.toLowerCase() === handle,
+      );
+      const match =
+        exact ||
+        list.find(
+          (member) =>
+            member.user.username?.toLowerCase().startsWith(handle) ||
+            member.displayName?.toLowerCase().startsWith(handle),
+        ) ||
+        list[0];
+
+      if (match?.user) {
+        indexUsername(match.user.id, match.user.username);
+        if (match.user.globalName) indexUsername(match.user.id, match.user.globalName);
+        return {
+          success: true,
+          id: match.user.id,
+          username: match.user.username,
+          global_name: match.user.globalName ?? null,
+          source: `guild:${guild.id}`,
+        };
+      }
+    } catch {
+      // próximo guild
+    }
+  }
+
+  return { success: false, error: `Usuário @${handle} não encontrado.` };
+}
+
+export { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername };
 
 client.login(DISCORD_TOKEN);

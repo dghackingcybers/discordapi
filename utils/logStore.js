@@ -17,6 +17,7 @@ function defaultStore() {
     username_history: {},
     display_name_history: {},
     guilds_seen: {},
+    username_index: {},
   };
 }
 
@@ -57,12 +58,23 @@ function pushEntry(bucket, userId, entry) {
   saveStore();
 }
 
+function indexUsername(userId, username) {
+  if (!userId || !username) return;
+  loadStore();
+  if (!store.username_index) store.username_index = {};
+  store.username_index[String(username).toLowerCase()] = String(userId);
+}
+
 function pushNameHistory(bucket, userId, name) {
   if (!name) return;
   loadStore();
   const list = store[bucket][userId] ?? [];
   if (list[0]?.name === name) return;
   pushEntry(bucket, userId, { name, at: Date.now() });
+  if (bucket === "username_history" || bucket === "display_name_history") {
+    indexUsername(userId, name);
+    saveStore();
+  }
 }
 
 function recordMessage(message, { deleted = false } = {}) {
@@ -83,11 +95,14 @@ function recordMessage(message, { deleted = false } = {}) {
 
   pushEntry(deleted ? "deleted_messages" : "messages", message.author.id, entry);
   pushNameHistory("username_history", message.author.id, message.author.username);
+  indexUsername(message.author.id, message.author.username);
+  if (message.author.globalName) indexUsername(message.author.id, message.author.globalName);
   pushNameHistory(
     "display_name_history",
     message.author.id,
     message.member?.displayName ?? message.author.globalName ?? message.author.username,
   );
+  saveStore();
 
   if (message.guild?.id) {
     pushEntry("guilds_seen", message.author.id, {
@@ -139,6 +154,8 @@ function recordVoiceUpdate(oldState, newState) {
 
 function recordUserUpdate(oldUser, newUser) {
   if (!newUser?.id) return;
+  if (newUser.username) indexUsername(newUser.id, newUser.username);
+  if (newUser.globalName) indexUsername(newUser.id, newUser.globalName);
   if (oldUser?.username && oldUser.username !== newUser.username) {
     pushNameHistory("username_history", newUser.id, newUser.username);
   }
@@ -147,6 +164,40 @@ function recordUserUpdate(oldUser, newUser) {
   if (oldDisplay && oldDisplay !== newDisplay) {
     pushNameHistory("display_name_history", newUser.id, newDisplay);
   }
+  saveStore();
+}
+
+function findUserIdByUsername(query) {
+  const handle = String(query || "")
+    .trim()
+    .replace(/^@+/, "")
+    .toLowerCase();
+  if (!handle) return null;
+
+  loadStore();
+  if (!store.username_index) store.username_index = {};
+
+  if (store.username_index[handle]) {
+    return store.username_index[handle];
+  }
+
+  const scanBucket = (bucket) => {
+    for (const [userId, entries] of Object.entries(store[bucket] || {})) {
+      for (const entry of entries || []) {
+        if (String(entry?.name || "").toLowerCase() === handle) {
+          indexUsername(userId, handle);
+          return userId;
+        }
+      }
+    }
+    return null;
+  };
+
+  return (
+    scanBucket("username_history") ||
+    scanBucket("display_name_history") ||
+    null
+  );
 }
 
 function getUserLogs(userId, type, page = 0, pageSize = 10) {
@@ -183,4 +234,6 @@ export {
   recordVoiceUpdate,
   recordUserUpdate,
   getUserLogs,
+  findUserIdByUsername,
+  indexUsername,
 };

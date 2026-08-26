@@ -1,7 +1,7 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
-import { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory } from './bot.js';
+import { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername } from './bot.js';
 import { bootstrapAvatarHistory, ensureAvatarRecorded } from './utils/avatarStore.js';
 
 dotenv.config();
@@ -82,6 +82,26 @@ app.get("/userFullInfo/:userId", async (req, res) => {
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// 🔹 LOOKUP por username (@user) — ANTES de /user/:userId
+app.get("/lookup/user", async (req, res) => {
+  const q = req.query.q || req.query.username || req.query.user || "";
+  const guildId = req.query.guildId || process.env.GUILD_ID;
+
+  if (!client.readyAt) {
+    return res.status(503).json({ success: false, error: "API ainda está ligando o selfbot." });
+  }
+
+  try {
+    const result = await lookupUserByUsername(q, guildId);
+    if (!result?.success) {
+      return res.status(404).json(result || { success: false, error: "Não encontrado." });
+    }
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -176,6 +196,7 @@ app.get("/", (req, res) => {
     status: "online",
     rotas: {
       perfil: "GET /user/:userId",
+      lookup: "GET /lookup/user?q=username",
       perfil_zany: "GET /userProfileCard/:userId",
       completo: "GET /userFullInfo/:userId",
       basico: "GET /userProfile/:userId",
