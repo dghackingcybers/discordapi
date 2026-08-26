@@ -373,53 +373,22 @@ function buildProfileCard({ user, member, profile, executor = null, views = 0, g
 }
 
 function buildDiscordEmbed(card) {
+  // Layout limpo estilo Zany: topo curto + datas essenciais + progresso 2x2
   const nbagang = process.env.EMOJI_NBAGANG || "<:nbagang:1542110144161390632>";
   const calendar = process.env.EMOJI_NBACALENDAR || "<:nbacalendar:1542113271941693552>";
+  const boostMark = card.insignia_impulso_atual
+    ? getTierEmoji(card.insignia_impulso_atual)
+    : nbagang;
+  const nitroMark = card.insignia_nitro_atual
+    ? getTierEmoji(card.insignia_nitro_atual)
+    : nbagang;
 
   const fields = [
     { name: `${nbagang} Menção`, value: card.mention, inline: true },
     { name: `${nbagang} Tag`, value: `\`${card.tag}\``, inline: true },
     { name: `${nbagang} ID`, value: `\`${card.id}\``, inline: true },
-    { name: `${nbagang} Insígnias`, value: card.insignias_texto, inline: false },
+    { name: `${nbagang} Insígnias`, value: card.insignias_texto || "—", inline: false },
   ];
-
-  if (card.perfil_privado_discord) {
-    fields.push({
-      name: `${nbagang} Perfil privado no Discord`,
-      value: "Dados exibidos via **API (self token)** — visível mesmo com perfil privado.",
-      inline: false,
-    });
-  }
-
-  if (card.bio) {
-    fields.push({
-      name: `${nbagang} Bio`,
-      value: card.bio.slice(0, 1024),
-      inline: false,
-    });
-  } else if (card.status_customizado) {
-    fields.push({
-      name: `${nbagang} Status`,
-      value: card.status_customizado.slice(0, 1024),
-      inline: false,
-    });
-  }
-
-  if (card.extras?.server_tag) {
-    fields.push({
-      name: `${nbagang} Tag de servidor`,
-      value: `\`${card.extras.server_tag}\``,
-      inline: true,
-    });
-  }
-
-  if (card.pronouns) {
-    fields.push({
-      name: `${nbagang} Pronome`,
-      value: card.pronouns,
-      inline: true,
-    });
-  }
 
   if (card.conta_criada_em) {
     fields.push({
@@ -429,17 +398,9 @@ function buildDiscordEmbed(card) {
     });
   }
 
-  if (card.entrou_no_servidor_em) {
-    fields.push({
-      name: `${calendar} Entrou no servidor em`,
-      value: card.entrou_no_servidor_em.texto,
-      inline: false,
-    });
-  }
-
   if (card.assinante_nitro_desde) {
     fields.push({
-      name: `${calendar} Assinante Nitro desde`,
+      name: `${nitroMark} Assinante Nitro desde`,
       value: card.assinante_nitro_desde.texto,
       inline: false,
     });
@@ -447,22 +408,8 @@ function buildDiscordEmbed(card) {
 
   if (card.impulsionando_desde) {
     fields.push({
-      name: `${calendar} Impulsionando desde (insígnia global)`,
+      name: `${boostMark} Impulsionando desde`,
       value: card.impulsionando_desde.texto,
-      inline: false,
-    });
-  }
-
-  if (card.impulsionando_servidor_desde) {
-    fields.push({
-      name: `${calendar} Boost neste servidor`,
-      value: card.impulsionando_servidor_desde.texto,
-      inline: false,
-    });
-  } else if (card.guild_id_consulta && card.impulsiona_globalmente && !card.impulsiona_servidor_atual) {
-    fields.push({
-      name: `${calendar} Boost neste servidor`,
-      value: "Este membro **não impulsiona** o servidor onde o comando foi usado.",
       inline: false,
     });
   }
@@ -473,12 +420,12 @@ function buildDiscordEmbed(card) {
 
     fields.push(
       {
-        name: `${nbagang} Insígnia de impulso atual`,
+        name: "Insígnia de impulso atual",
         value: `${boostEmoji} ${card.insignia_impulso_atual.texto}`,
         inline: true,
       },
       {
-        name: `${nbagang} Próxima insígnia de impulso`,
+        name: "Próxima insígnia de impulso",
         value: card.proxima_insignia_impulso?.texto === "Nível máximo atingido."
           ? `${boostEmoji} ${card.proxima_insignia_impulso.texto}`
           : `${nextBoostEmoji} ${card.proxima_insignia_impulso?.texto ?? "—"}`,
@@ -493,12 +440,12 @@ function buildDiscordEmbed(card) {
 
     fields.push(
       {
-        name: `${nbagang} Insígnia de nitro atual`,
+        name: "Insígnia de nitro atual",
         value: `${nitroEmoji} ${card.insignia_nitro_atual.texto}`,
         inline: true,
       },
       {
-        name: `${nbagang} Próxima insígnia de nitro`,
+        name: "Próxima insígnia de nitro",
         value: card.proxima_insignia_nitro?.texto === "Nível máximo atingido."
           ? `${nitroEmoji} ${card.proxima_insignia_nitro.texto}`
           : `${nextNitroEmoji} ${card.proxima_insignia_nitro?.texto ?? "—"}`,
@@ -508,7 +455,7 @@ function buildDiscordEmbed(card) {
   }
 
   return {
-    color: 0x5865f2,
+    color: 0x702af3,
     author: card.author,
     thumbnail: card.thumbnail ? { url: card.thumbnail } : undefined,
     fields,
