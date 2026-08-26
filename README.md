@@ -1,4 +1,4 @@
-# Discord API — Perfil estilo Zany
+# Discord API — Perfil Nba Gang
 
 API Node.js que busca informações de perfil do Discord (boost, nitro, insígnias, embed pronto) usando `discord.js-selfbot-v13`.
 
