@@ -27,6 +27,7 @@ import {
   getAvatarHistory,
   bootstrapAvatarHistory,
 } from './utils/avatarStore.js';
+import { getViews, incrementViews, adjustViews } from './utils/viewStore.js';
 
 dotenv.config();
 
@@ -218,17 +219,27 @@ async function getUserProfileCard(userId, options = {}) {
   const executor = options.executor ?? client.user;
   const presence = await getUserPresence(userId, guildId);
 
+  // Contador persistente: incrementa só quando o bot pede (views>=1 / increment=true)
+  const shouldIncrement =
+    options.incrementViews === true ||
+    options.increment === true ||
+    Number(options.views) > 0;
+
+  const viewCount = shouldIncrement
+    ? incrementViews(userId, Number(options.views) > 0 ? Number(options.views) : 1)
+    : getViews(userId);
+
   const profileCard = buildProfileCard({
     user,
     member,
     profile,
     executor,
-    views: options.views ?? 0,
+    views: viewCount,
     guildId,
     customStatus: presence.custom_status,
   });
 
-  return { success: true, profile: profileCard };
+  return { success: true, profile: profileCard, views: viewCount };
 }
 
 async function getUserInfo(userId, options = {}) {
@@ -240,12 +251,21 @@ async function getUserInfo(userId, options = {}) {
 
     const { _raw, ...discordUser } = userSubscriptions;
     const userPresence = await getUserPresence(userId, options.guildId || GUILD_ID);
+    const shouldIncrement =
+      options.incrementViews === true ||
+      options.increment === true ||
+      Number(options.views) > 0;
+
+    const viewCount = shouldIncrement
+      ? incrementViews(userId, Number(options.views) > 0 ? Number(options.views) : 1)
+      : getViews(userId);
+
     const profileCard = buildProfileCard({
       user: _raw.user,
       member: _raw.member,
       profile: _raw.profile,
       executor: options.executor ?? client.user,
-      views: options.views ?? 0,
+      views: viewCount,
       guildId: options.guildId || GUILD_ID,
       customStatus: userPresence.custom_status,
     });
@@ -274,7 +294,7 @@ async function getUserInfo(userId, options = {}) {
 async function getUserPanelSection(userId, section, options = {}) {
   const guildId = options.guildId || GUILD_ID;
   const page = Number(options.page) || 0;
-  const cardResult = await getUserProfileCard(userId, { guildId, views: options.views ?? 0 });
+  const cardResult = await getUserProfileCard(userId, { guildId, views: 0 });
 
   if (!cardResult?.success) {
     return { success: false, error: cardResult?.error || 'Perfil indisponível.' };
@@ -421,6 +441,6 @@ async function lookupUserByUsername(query, preferredGuildId = GUILD_ID) {
   return { success: false, error: `Usuário @${handle} não encontrado.` };
 }
 
-export { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername };
+export { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername, getViews, adjustViews };
 
 client.login(DISCORD_TOKEN);

@@ -1,7 +1,7 @@
 import express from 'express';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
-import { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername } from './bot.js';
+import { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername, getViews, adjustViews } from './bot.js';
 import { bootstrapAvatarHistory, ensureAvatarRecorded } from './utils/avatarStore.js';
 
 dotenv.config();
@@ -9,8 +9,17 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const VIEWS_ADMIN_KEY = process.env.VIEWS_ADMIN_KEY || process.env.API_ADMIN_KEY || '';
+
+app.use(express.json());
 
 console.log("Server is starting...");
+
+function isViewsAdmin(req) {
+  const key = req.headers['x-admin-key'] || req.query.key || req.body?.key || '';
+  if (!VIEWS_ADMIN_KEY) return true; // se não configurou key, libera (bot já restringe)
+  return String(key) === String(VIEWS_ADMIN_KEY);
+}
 
 // Função para obter bio e pronome (status customizado)
 async function getUserProfile(userId) {
@@ -105,6 +114,30 @@ app.get("/lookup/user", async (req, res) => {
   }
 });
 
+// 🔹 Contador de visualizações (puxadas do userinfo)
+app.get("/views/:userId", (req, res) => {
+  const { userId } = req.params;
+  return res.json({ success: true, id: userId, views: getViews(userId) });
+});
+
+app.post("/views/:userId", (req, res) => {
+  if (!isViewsAdmin(req)) {
+    return res.status(403).json({ success: false, error: "Não autorizado." });
+  }
+
+  const { userId } = req.params;
+  const action = req.body?.action || req.query.action || "add";
+  const amountRaw = req.body?.amount ?? req.query.amount ?? 1;
+  const amount = Number(amountRaw);
+
+  if (!Number.isFinite(amount)) {
+    return res.status(400).json({ success: false, error: "Quantidade inválida." });
+  }
+
+  const views = adjustViews(userId, { action, amount });
+  return res.json({ success: true, id: userId, action, amount, views });
+});
+
 // 🔹 ROTA CURTA (alias) — use /user/ID
 app.get("/user/:userId", async (req, res) => {
   const { userId } = req.params;
@@ -197,6 +230,8 @@ app.get("/", (req, res) => {
     rotas: {
       perfil: "GET /user/:userId",
       lookup: "GET /lookup/user?q=username",
+      views_get: "GET /views/:userId",
+      views_edit: "POST /views/:userId { action: add|remove|set, amount }",
       perfil_zany: "GET /userProfileCard/:userId",
       completo: "GET /userFullInfo/:userId",
       basico: "GET /userProfile/:userId",
