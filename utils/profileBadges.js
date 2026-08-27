@@ -1,30 +1,40 @@
 /**
- * Insígnias do perfil Discord (profile.badges) + flags antigas.
- * Emojis custom: BADGE_EMOJI_QUEST, BADGE_EMOJI_ACTIVE_DEV, etc. no .env / Render
+ * Insígnias do perfil Discord (profile.badges) + flags.
+ * Badges novas do Discord (2026) entram aqui depois.
  */
 
 const PROFILE_BADGE_DEFAULTS = {
-  quest_completed: process.env.BADGE_EMOJI_QUEST || "<:Badge_Completed_a_Quest:1541392759532036179>",
-  completed_a_quest: process.env.BADGE_EMOJI_QUEST || "<:Badge_Completed_a_Quest:1541392759532036179>",
-  hypesquad_house_1: process.env.BADGE_EMOJI_HYPESQUAD_1 || "🔶",
-  hypesquad_house_2: process.env.BADGE_EMOJI_HYPESQUAD_2 || "🔥",
-  hypesquad_house_3: process.env.BADGE_EMOJI_HYPESQUAD_3 || "💚",
-  active_developer: process.env.BADGE_EMOJI_ACTIVE_DEV || "🖥️",
-  premium_early_supporter: process.env.BADGE_EMOJI_EARLY_SUPPORTER || "<:EarlySupporter:1067078594863562803>",
+  // ── mapa enviado pelo user ─────────────────────────────────
   early_supporter: process.env.BADGE_EMOJI_EARLY_SUPPORTER || "<:EarlySupporter:1067078594863562803>",
-  verified_developer: process.env.BADGE_EMOJI_VERIFIED_DEV || "🛠️",
+  premium_early_supporter: process.env.BADGE_EMOJI_EARLY_SUPPORTER || "<:EarlySupporter:1067078594863562803>",
+  verified_developer: process.env.BADGE_EMOJI_VERIFIED_DEV || "<:Badge_Early_VerifiedBotDeveloper:1174406616410497186>",
+  early_verified_bot_developer: process.env.BADGE_EMOJI_VERIFIED_DEV || "<:Badge_Early_VerifiedBotDeveloper:1174406616410497186>",
+  quest_completed: process.env.BADGE_EMOJI_QUEST || "<:Completed_a_Quest:1320384450692911228>",
+  completed_a_quest: process.env.BADGE_EMOJI_QUEST || "<:Completed_a_Quest:1320384450692911228>",
+  legacy_username: process.env.BADGE_EMOJI_LEGACY_USER || "<:rzlegacy:1122335064894738452>",
+  originally_known_as: process.env.BADGE_EMOJI_LEGACY_USER || "<:rzlegacy:1122335064894738452>",
+  hypesquad_house_1: process.env.BADGE_EMOJI_HYPESQUAD_1 || "<:BraveryLogo:1067078454526357554>",
+  hypesquad_house_2: process.env.BADGE_EMOJI_HYPESQUAD_2 || "<:BrillianceLogo:1067078476751974470>",
+  hypesquad_house_3: process.env.BADGE_EMOJI_HYPESQUAD_3 || "<:BalanceLogo:1067078379356029059>",
+  active_developer: process.env.BADGE_EMOJI_ACTIVE_DEV || "<:1042433990952497212:1067078961445752913>",
+
+  // ── extras comuns ──────────────────────────────────────────
+  hypesquad: process.env.BADGE_EMOJI_HYPESQUAD_EVENTS || "<:Badge_HypeSquad_Events:1531162722647937055>",
   bug_hunter_level_1: process.env.BADGE_EMOJI_BUG_HUNTER || "🐛",
   bug_hunter_level_2: process.env.BADGE_EMOJI_BUG_HUNTER_2 || "🐛",
   certified_moderator: process.env.BADGE_EMOJI_MOD || "🛡️",
-  legacy_username: process.env.BADGE_EMOJI_LEGACY_USER || "📛",
-  originally_known_as: process.env.BADGE_EMOJI_LEGACY_USER || "📛",
+  partner: process.env.BADGE_EMOJI_PARTNER || "🤝",
+  staff: process.env.BADGE_EMOJI_STAFF || "👨‍💼",
+  verified_bot: process.env.BADGE_EMOJI_VERIFIED_BOT || "✅",
 };
 
+/** Boost/nitro tenure não entram na lista — vão pro progresso de nível */
 const SKIP_PROFILE_BADGE_IDS = [
   "guild_booster",
   "guild_booster_lvl",
   "premium_tenure",
-  "subscriber",
+  "nitro_subscriber",
+  "premium",
 ];
 
 function envBadgeKey(badgeId) {
@@ -33,7 +43,7 @@ function envBadgeKey(badgeId) {
 
 function shouldSkipProfileBadge(id) {
   const normalized = String(id || "").toLowerCase();
-  return SKIP_PROFILE_BADGE_IDS.some((prefix) => normalized.includes(prefix));
+  return SKIP_PROFILE_BADGE_IDS.some((prefix) => normalized.includes(prefix) || normalized.startsWith(prefix));
 }
 
 function resolveProfileBadgeEmoji(badge) {
@@ -46,10 +56,12 @@ function resolveProfileBadgeEmoji(badge) {
   if (PROFILE_BADGE_DEFAULTS[id]) return PROFILE_BADGE_DEFAULTS[id];
 
   for (const [key, emoji] of Object.entries(PROFILE_BADGE_DEFAULTS)) {
-    if (id.includes(key)) return emoji;
+    if (id.includes(key) || id.replace(/_/g, "").includes(key.replace(/_/g, ""))) {
+      return emoji;
+    }
   }
 
-  return badge?.description ? `🏅` : null;
+  return badge?.description ? "🏅" : null;
 }
 
 function collectProfileBadges(profile) {

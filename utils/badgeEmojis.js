@@ -26,7 +26,31 @@ const NITRO_LEVELS = [
   { nivel: 8, meses: 72, suffix: "87159", label: "72 meses" },
 ];
 
-/** Fallback unicode por nível (quando não há emoji custom no .env) */
+/** Emojis custom de boost (mapa do user) */
+const BOOST_EMOJI_DEFAULTS = {
+  1: "<:boost1month:1099752190182182962>",
+  2: "<:boost2month:1099751907695788123>",
+  3: "<:boost3month:1099751866436419604>",
+  4: "<:boost6month:1099751803794497687>",
+  5: "<:boost9month:1099751751936127076>",
+  6: "<:boost12month:1099751676178604192>",
+  7: "<:boost15month:1099751703735193640>",
+  8: "<:boost18month:1099751723964305468>",
+  9: "<:boost24month:1099752177322442772>",
+};
+
+/** Emojis custom de nitro (mapa do user) */
+const NITRO_EMOJI_DEFAULTS = {
+  1: "<:nitrobronze:1320372278420180993>",
+  2: "<:nitrosilver:1320372281654116405>",
+  3: "<:Badge_Nitro_Gold_6_Months:1320372697112379516>",
+  4: "<:nitroplatinum:1320372272091103253>",
+  5: "<:nitrodiamond:1320372276201521184>",
+  6: "<:nitroemerald:1320372273332355083>",
+  7: "<:nitroruby:1320372280303419434>",
+  8: "<:nitrofire:1320372275182305381>",
+};
+
 const BOOST_UNICODE = ["🔺", "🔷", "⬡", "🔶", "🟣", "⭐", "✨", "🔮", "💎"];
 const NITRO_UNICODE = ["🌑", "🌒", "🌓", "🌔", "🌕", "💚", "❤️", "🩷"];
 
@@ -34,8 +58,8 @@ function badgeIconUrl(hash, suffix) {
   return `https://cdn.discordapp.com/badge-icons/${hash}/${suffix}.png`;
 }
 
-function loadCustomEmojis(prefix, total) {
-  const emojis = {};
+function loadCustomEmojis(prefix, total, defaults = {}) {
+  const emojis = { ...defaults };
   for (let i = 1; i <= total; i += 1) {
     const value = process.env[`${prefix}_${i}`];
     if (value) emojis[i] = value;
@@ -47,12 +71,16 @@ let customBoostEmojis = null;
 let customNitroEmojis = null;
 
 function getCustomBoostEmojis() {
-  if (!customBoostEmojis) customBoostEmojis = loadCustomEmojis("BOOST_EMOJI", 9);
+  if (!customBoostEmojis) {
+    customBoostEmojis = loadCustomEmojis("BOOST_EMOJI", 9, BOOST_EMOJI_DEFAULTS);
+  }
   return customBoostEmojis;
 }
 
 function getCustomNitroEmojis() {
-  if (!customNitroEmojis) customNitroEmojis = loadCustomEmojis("NITRO_EMOJI", 8);
+  if (!customNitroEmojis) {
+    customNitroEmojis = loadCustomEmojis("NITRO_EMOJI", 8, NITRO_EMOJI_DEFAULTS);
+  }
   return customNitroEmojis;
 }
 
@@ -95,7 +123,7 @@ function parseBadgeLevelFromProfile(profile, type) {
   const match = badges.find((badge) => {
     const id = String(badge?.id ?? "").toLowerCase();
     if (type === "boost") return id.includes("guild_booster") || id.includes("guild_booster_lvl");
-    return id.includes("premium_tenure") || id.includes("subscriber");
+    return id.includes("premium_tenure") || id.includes("subscriber") || id.includes("nitro");
   });
 
   if (!match?.id) return null;
@@ -144,6 +172,8 @@ function getTierEmoji(tier) {
 export {
   BOOST_LEVELS,
   NITRO_LEVELS,
+  BOOST_EMOJI_DEFAULTS,
+  NITRO_EMOJI_DEFAULTS,
   getBoostLevels,
   getNitroLevels,
   getLevelByNumber,

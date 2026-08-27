@@ -14,18 +14,21 @@ import { collectProfileBadges } from "./profileBadges.js";
 const NITRO_TIER_MONTHS = [1, 3, 6, 12, 24, 36, 60, 72];
 const BOOST_TIER_MONTHS = [1, 2, 3, 6, 9, 12, 15, 18, 24];
 
+/** Bits oficiais UserFlags — corrigido (antes estava mapeado errado e sumia badge) */
 const BADGE_MAP = {
-  1: { name: "STAFF", emoji: "👨‍💼" },
-  2: { name: "PARTNER", emoji: "🤝" },
-  4: { name: "HYPESQUAD", emoji: "🏠" },
-  8: { name: "BUG_HUNTER", emoji: "🐛" },
-  64: { name: "EARLY_SUPPORTER", emoji: process.env.BADGE_EMOJI_EARLY_SUPPORTER || "<:EarlySupporter:1067078594863562803>" },
-  128: { name: "TEAM_USER", emoji: "👥" },
-  512: { name: "SYSTEM", emoji: "⚙️" },
-  16384: { name: "BUG_HUNTER_LEVEL_2", emoji: "🐛" },
-  131072: { name: "VERIFIED_BOT", emoji: "✅" },
-  262144: { name: "EARLY_VERIFIED_BOT_DEVELOPER", emoji: "🛠️" },
-  4194304: { name: "ACTIVE_DEVELOPER", emoji: "🔧" },
+  1: { name: "STAFF", emoji: process.env.BADGE_EMOJI_STAFF || "👨‍💼" },
+  2: { name: "PARTNER", emoji: process.env.BADGE_EMOJI_PARTNER || "🤝" },
+  4: { name: "HYPESQUAD_EVENTS", emoji: process.env.BADGE_EMOJI_HYPESQUAD_EVENTS || "<:Badge_HypeSquad_Events:1531162722647937055>" },
+  8: { name: "BUG_HUNTER", emoji: process.env.BADGE_EMOJI_BUG_HUNTER || "🐛" },
+  64: { name: "HYPESQUAD_BRAVERY", emoji: process.env.BADGE_EMOJI_HYPESQUAD_1 || "<:BraveryLogo:1067078454526357554>" },
+  128: { name: "HYPESQUAD_BRILLIANCE", emoji: process.env.BADGE_EMOJI_HYPESQUAD_2 || "<:BrillianceLogo:1067078476751974470>" },
+  256: { name: "HYPESQUAD_BALANCE", emoji: process.env.BADGE_EMOJI_HYPESQUAD_3 || "<:BalanceLogo:1067078379356029059>" },
+  512: { name: "EARLY_SUPPORTER", emoji: process.env.BADGE_EMOJI_EARLY_SUPPORTER || "<:EarlySupporter:1067078594863562803>" },
+  16384: { name: "BUG_HUNTER_LEVEL_2", emoji: process.env.BADGE_EMOJI_BUG_HUNTER_2 || "🐛" },
+  65536: { name: "VERIFIED_BOT", emoji: process.env.BADGE_EMOJI_VERIFIED_BOT || "✅" },
+  131072: { name: "EARLY_VERIFIED_BOT_DEVELOPER", emoji: process.env.BADGE_EMOJI_VERIFIED_DEV || "<:Badge_Early_VerifiedBotDeveloper:1174406616410497186>" },
+  262144: { name: "CERTIFIED_MODERATOR", emoji: process.env.BADGE_EMOJI_MOD || "🛡️" },
+  4194304: { name: "ACTIVE_DEVELOPER", emoji: process.env.BADGE_EMOJI_ACTIVE_DEV || "<:1042433990952497212:1067078961445752913>" },
 };
 
 const BADGE_ICONS = {
@@ -187,14 +190,34 @@ function getTierProgress(sinceDate, tierMonths) {
   };
 }
 
+const BADGE_ALIASES = {
+  HYPESQUAD_BRAVERY: ["HYPESQUAD_HOUSE_1", "HYPESQUAD_BRAVERY"],
+  HYPESQUAD_BRILLIANCE: ["HYPESQUAD_HOUSE_2", "HYPESQUAD_BRILLIANCE"],
+  HYPESQUAD_BALANCE: ["HYPESQUAD_HOUSE_3", "HYPESQUAD_BALANCE"],
+  HYPESQUAD_HOUSE_1: ["HYPESQUAD_HOUSE_1", "HYPESQUAD_BRAVERY"],
+  HYPESQUAD_HOUSE_2: ["HYPESQUAD_HOUSE_2", "HYPESQUAD_BRILLIANCE"],
+  HYPESQUAD_HOUSE_3: ["HYPESQUAD_HOUSE_3", "HYPESQUAD_BALANCE"],
+  EARLY_SUPPORTER: ["EARLY_SUPPORTER"],
+  VERIFIED_DEVELOPER: ["VERIFIED_DEVELOPER", "EARLY_VERIFIED_BOT_DEVELOPER"],
+  ACTIVE_DEVELOPER: ["ACTIVE_DEVELOPER"],
+  QUEST_COMPLETED: ["QUEST_COMPLETED", "COMPLETED_A_QUEST"],
+  LEGACY_USERNAME: ["LEGACY_USERNAME"],
+};
+
 function getBadges(flags, { hasNitro = false, hasBoost = false, profile = null } = {}) {
   const badges = [];
   const seen = new Set();
+  const seenEmojis = new Set();
 
   const push = (badge) => {
     const key = badge.name || badge.emoji;
     if (!key || seen.has(key)) return;
+    if (badge.emoji && seenEmojis.has(badge.emoji)) return;
+    const aliases = BADGE_ALIASES[key] || [key];
+    if (aliases.some((a) => seen.has(a))) return;
+    for (const a of aliases) seen.add(a);
     seen.add(key);
+    if (badge.emoji) seenEmojis.add(badge.emoji);
     badges.push(badge);
   };
 
@@ -211,8 +234,6 @@ function getBadges(flags, { hasNitro = false, hasBoost = false, profile = null }
 
   for (const [bit, badge] of Object.entries(BADGE_MAP)) {
     if (flags & Number(bit)) {
-      const name = badge.name;
-      if ([...seen].some((key) => String(key).includes(name))) continue;
       push(badge);
     }
   }
