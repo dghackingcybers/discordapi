@@ -26,16 +26,15 @@ const PROFILE_BADGE_DEFAULTS = {
   partner: process.env.BADGE_EMOJI_PARTNER || "🤝",
   staff: process.env.BADGE_EMOJI_STAFF || "👨‍💼",
   verified_bot: process.env.BADGE_EMOJI_VERIFIED_BOT || "✅",
+  // Orbs / leaf badge (2025+)
+  orb_profile_badge: process.env.BADGE_EMOJI_ORB || "🍃",
+  orbs: process.env.BADGE_EMOJI_ORB || "🍃",
+  orb_apprentice: process.env.BADGE_EMOJI_ORB || "🍃",
 };
 
-/** Boost/nitro tenure não entram na lista — vão pro progresso de nível */
-const SKIP_PROFILE_BADGE_IDS = [
-  "guild_booster",
-  "guild_booster_lvl",
-  "premium_tenure",
-  "nitro_subscriber",
-  "premium",
-];
+/** Só nitro/boost tenure — NÃO usar includes("premium") (mata Early Supporter) */
+const SKIP_EXACT = new Set(["premium", "nitro", "nitro_subscriber"]);
+const SKIP_PREFIXES = ["guild_booster", "premium_tenure"];
 
 function envBadgeKey(badgeId) {
   return `BADGE_EMOJI_${String(badgeId).toUpperCase().replace(/[^A-Z0-9]/g, "_")}`;
@@ -43,7 +42,11 @@ function envBadgeKey(badgeId) {
 
 function shouldSkipProfileBadge(id) {
   const normalized = String(id || "").toLowerCase();
-  return SKIP_PROFILE_BADGE_IDS.some((prefix) => normalized.includes(prefix) || normalized.startsWith(prefix));
+  if (!normalized) return true;
+  if (SKIP_EXACT.has(normalized)) return true;
+  return SKIP_PREFIXES.some(
+    (prefix) => normalized === prefix || normalized.startsWith(`${prefix}_`) || normalized.startsWith(prefix),
+  );
 }
 
 function resolveProfileBadgeEmoji(badge) {
@@ -90,4 +93,4 @@ function collectProfileBadges(profile) {
   return result;
 }
 
-export { collectProfileBadges, resolveProfileBadgeEmoji, PROFILE_BADGE_DEFAULTS };
+export { collectProfileBadges, resolveProfileBadgeEmoji, PROFILE_BADGE_DEFAULTS, shouldSkipProfileBadge };

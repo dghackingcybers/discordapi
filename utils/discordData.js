@@ -136,15 +136,20 @@ function mergeProfiles(a, b) {
 }
 
 async function fetchProfileById(client, userId, guildId) {
-  const query = {
+  // Sem type:modal — o modal costuma vir sem badges[] completas.
+  const baseQuery = {
     with_mutual_guilds: true,
+    with_mutual_friends: true,
     with_mutual_friends_count: true,
-    type: "modal",
-    ...(guildId ? { guild_id: guildId } : {}),
   };
 
   try {
-    return await client.api.users(userId).profile.get({ query });
+    return await client.api.users(userId).profile.get({
+      query: {
+        ...baseQuery,
+        ...(guildId ? { guild_id: guildId } : {}),
+      },
+    });
   } catch (error) {
     console.warn("⚠️ Perfil indisponível:", error.message);
   }
@@ -152,13 +157,7 @@ async function fetchProfileById(client, userId, guildId) {
   if (!guildId) return null;
 
   try {
-    return await client.api.users(userId).profile.get({
-      query: {
-        with_mutual_guilds: true,
-        with_mutual_friends_count: true,
-        type: "modal",
-      },
-    });
+    return await client.api.users(userId).profile.get({ query: baseQuery });
   } catch (error) {
     console.warn("⚠️ Perfil global indisponível:", error.message);
     return null;

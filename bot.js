@@ -1,6 +1,6 @@
 import { Client } from 'discord.js-selfbot-v13';
 import dotenv from 'dotenv';
-import { buildProfileCard, getBadges } from './utils/profileFormat.js';
+import { buildProfileCard, getBadges, resolvePublicFlags } from './utils/profileFormat.js';
 import {
   resolveBoostBadgeSince,
   resolveGuildBoostSince,
@@ -126,8 +126,8 @@ async function getUserSubscriptions(userId, guildId = GUILD_ID) {
       boost_since: boostBadgeSince?.toISOString() ?? null,
       boost_servidor_desde: guildBoostSince?.toISOString() ?? null,
       premium_type: user.premiumType ?? profile?.premium_type ?? 0,
-      public_flags: user.publicFlags || 0,
-      badges: getBadges(user.publicFlags || 0, {
+      public_flags: resolvePublicFlags(user, profile),
+      badges: getBadges(resolvePublicFlags(user, profile), {
         hasNitro,
         hasBoost: resolveHasBoost(profile, member, guildId),
         profile,

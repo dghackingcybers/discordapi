@@ -122,14 +122,37 @@ function parseBadgeLevelFromProfile(profile, type) {
 
   const match = badges.find((badge) => {
     const id = String(badge?.id ?? "").toLowerCase();
-    if (type === "boost") return id.includes("guild_booster") || id.includes("guild_booster_lvl");
-    return id.includes("premium_tenure") || id.includes("subscriber") || id.includes("nitro");
+    if (type === "boost") return id.includes("guild_booster");
+    return (
+      id.includes("premium_tenure") ||
+      id === "premium" ||
+      id.includes("nitro")
+    );
   });
 
   if (!match?.id) return null;
 
-  const level = Number(String(match.id).match(/lvl(\d+)/i)?.[1]);
-  return Number.isFinite(level) ? level : null;
+  const id = String(match.id).toLowerCase();
+  const lvlMatch = id.match(/lvl(\d+)/i);
+  if (lvlMatch) {
+    const level = Number(lvlMatch[1]);
+    return Number.isFinite(level) ? level : null;
+  }
+
+  // premium_tenure_6_month / premium_tenure_24_month_v2
+  const monthMatch = id.match(/(\d+)_month/);
+  if (monthMatch) {
+    const months = Number(monthMatch[1]);
+    if (!Number.isFinite(months)) return null;
+    const tiers = type === "boost" ? BOOST_LEVELS : NITRO_LEVELS;
+    let best = 1;
+    for (const tier of tiers) {
+      if (months >= tier.meses) best = tier.nivel;
+    }
+    return best;
+  }
+
+  return null;
 }
 
 function attachEmojiToTier(tierData, type, profile = null) {
@@ -166,7 +189,7 @@ function attachEmojiToTier(tierData, type, profile = null) {
 
 function getTierEmoji(tier) {
   if (!tier) return "•";
-  return tier.emoji ?? tier.emoji_unicode ?? tier.emoji_display ?? "•";
+  return tier.emoji_display ?? tier.emoji ?? tier.emoji_unicode ?? "•";
 }
 
 export {

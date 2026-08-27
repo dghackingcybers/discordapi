@@ -14,6 +14,11 @@ import { collectProfileBadges } from "./profileBadges.js";
 const NITRO_TIER_MONTHS = [1, 3, 6, 12, 24, 36, 60, 72];
 const BOOST_TIER_MONTHS = [1, 2, 3, 6, 9, 12, 15, 18, 24];
 
+const NITRO_FALLBACK_EMOJI =
+  process.env.NITRO_EMOJI_1 || "<:nitrobronze:1320372278420180993>";
+const BOOST_FALLBACK_EMOJI =
+  process.env.BOOST_EMOJI_1 || "<:boost1month:1099752190182182962>";
+
 /** Bits oficiais UserFlags — corrigido (antes estava mapeado errado e sumia badge) */
 const BADGE_MAP = {
   1: { name: "STAFF", emoji: process.env.BADGE_EMOJI_STAFF || "👨‍💼" },
@@ -30,6 +35,27 @@ const BADGE_MAP = {
   262144: { name: "CERTIFIED_MODERATOR", emoji: process.env.BADGE_EMOJI_MOD || "🛡️" },
   4194304: { name: "ACTIVE_DEVELOPER", emoji: process.env.BADGE_EMOJI_ACTIVE_DEV || "<:1042433990952497212:1067078961445752913>" },
 };
+
+/** Selfbot usa user.flags; d.js normal usa publicFlags. */
+function resolvePublicFlags(user, profile = null) {
+  const candidates = [
+    user?.flags?.bitfield,
+    user?.flags,
+    user?.publicFlags?.bitfield,
+    user?.publicFlags,
+    user?.public_flags,
+    profile?.user?.public_flags,
+    profile?.user?.flags?.bitfield,
+    profile?.user?.flags,
+    profile?.public_flags,
+  ];
+
+  for (const value of candidates) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return 0;
+}
 
 const BADGE_ICONS = {
   nitro: "https://cdn.discordapp.com/badge-icons/2ba85e8022458202676085784aa23e828/2b1f7.png",
@@ -197,11 +223,19 @@ const BADGE_ALIASES = {
   HYPESQUAD_HOUSE_1: ["HYPESQUAD_HOUSE_1", "HYPESQUAD_BRAVERY"],
   HYPESQUAD_HOUSE_2: ["HYPESQUAD_HOUSE_2", "HYPESQUAD_BRILLIANCE"],
   HYPESQUAD_HOUSE_3: ["HYPESQUAD_HOUSE_3", "HYPESQUAD_BALANCE"],
-  EARLY_SUPPORTER: ["EARLY_SUPPORTER"],
+  EARLY_SUPPORTER: ["EARLY_SUPPORTER", "PREMIUM_EARLY_SUPPORTER"],
+  PREMIUM_EARLY_SUPPORTER: ["EARLY_SUPPORTER", "PREMIUM_EARLY_SUPPORTER"],
   VERIFIED_DEVELOPER: ["VERIFIED_DEVELOPER", "EARLY_VERIFIED_BOT_DEVELOPER"],
+  EARLY_VERIFIED_BOT_DEVELOPER: ["VERIFIED_DEVELOPER", "EARLY_VERIFIED_BOT_DEVELOPER"],
   ACTIVE_DEVELOPER: ["ACTIVE_DEVELOPER"],
   QUEST_COMPLETED: ["QUEST_COMPLETED", "COMPLETED_A_QUEST"],
+  COMPLETED_A_QUEST: ["QUEST_COMPLETED", "COMPLETED_A_QUEST"],
   LEGACY_USERNAME: ["LEGACY_USERNAME"],
+  PARTNER: ["PARTNER"],
+  HYPESQUAD_EVENTS: ["HYPESQUAD_EVENTS", "HYPESQUAD"],
+  HYPESQUAD: ["HYPESQUAD_EVENTS", "HYPESQUAD"],
+  ORB_PROFILE_BADGE: ["ORB_PROFILE_BADGE", "ORBS", "ORB_APPRENTICE"],
+  ORBS: ["ORB_PROFILE_BADGE", "ORBS", "ORB_APPRENTICE"],
 };
 
 function getBadges(flags, { hasNitro = false, hasBoost = false, profile = null } = {}) {
@@ -222,10 +256,10 @@ function getBadges(flags, { hasNitro = false, hasBoost = false, profile = null }
   };
 
   if (hasNitro) {
-    push({ name: "NITRO", emoji: "💎", icon: BADGE_ICONS.nitro });
+    push({ name: "NITRO", emoji: NITRO_FALLBACK_EMOJI, icon: BADGE_ICONS.nitro });
   }
   if (hasBoost) {
-    push({ name: "BOOST", emoji: "🚀", icon: BADGE_ICONS.boost });
+    push({ name: "BOOST", emoji: BOOST_FALLBACK_EMOJI, icon: BADGE_ICONS.boost });
   }
 
   for (const badge of collectProfileBadges(profile)) {
@@ -267,13 +301,19 @@ function buildInsigniasTexto(badges, nitroProgress, boostProgress, hasNitro, has
   const parts = [];
 
   if (hasNitro) {
-    const emoji = getTierEmoji(nitroProgress?.atual);
-    parts.push(emoji !== "•" ? emoji : "💎");
+    const tierEmoji = getTierEmoji(nitroProgress?.atual);
+    const fromBadge = badges.find((b) => b.name === "NITRO")?.emoji;
+    parts.push(
+      tierEmoji !== "•" ? tierEmoji : fromBadge || NITRO_FALLBACK_EMOJI,
+    );
   }
 
   if (hasBoost) {
-    const emoji = getTierEmoji(boostProgress?.atual);
-    parts.push(emoji !== "•" ? emoji : "🚀");
+    const tierEmoji = getTierEmoji(boostProgress?.atual);
+    const fromBadge = badges.find((b) => b.name === "BOOST")?.emoji;
+    parts.push(
+      tierEmoji !== "•" ? tierEmoji : fromBadge || BOOST_FALLBACK_EMOJI,
+    );
   }
 
   for (const badge of badges) {
@@ -287,7 +327,7 @@ function buildInsigniasTexto(badges, nitroProgress, boostProgress, hasNitro, has
 }
 
 function buildProfileCard({ user, member, profile, executor = null, views = 0, guildId = null, customStatus = null }) {
-  const flags = user.publicFlags ?? user.public_flags ?? 0;
+  const flags = resolvePublicFlags(user, profile);
   const targetGuildId = guildId ?? member?.guild?.id ?? profile?.guild_member?.guild_id ?? null;
 
   const hasNitro = resolveHasNitro(profile, user);
@@ -494,6 +534,7 @@ export {
   formatDateField,
   getTierProgress,
   getBadges,
+  resolvePublicFlags,
   buildProfileCard,
   buildDiscordEmbed,
   NITRO_TIER_MONTHS,
