@@ -9,8 +9,8 @@ const PROFILE_BADGE_DEFAULTS = {
   premium_early_supporter: process.env.BADGE_EMOJI_EARLY_SUPPORTER || "<:EarlySupporter:1067078594863562803>",
   verified_developer: process.env.BADGE_EMOJI_VERIFIED_DEV || "<:Badge_Early_VerifiedBotDeveloper:1174406616410497186>",
   early_verified_bot_developer: process.env.BADGE_EMOJI_VERIFIED_DEV || "<:Badge_Early_VerifiedBotDeveloper:1174406616410497186>",
-  quest_completed: process.env.BADGE_EMOJI_QUEST || "<:Completed_a_Quest:1320384450692911228>",
-  completed_a_quest: process.env.BADGE_EMOJI_QUEST || "<:Completed_a_Quest:1320384450692911228>",
+  quest_completed: process.env.BADGE_EMOJI_QUEST || "<:Badge_Completed_a_Quest:1541392759532036179>",
+  completed_a_quest: process.env.BADGE_EMOJI_QUEST || "<:Badge_Completed_a_Quest:1541392759532036179>",
   legacy_username: process.env.BADGE_EMOJI_LEGACY_USER || "<:rzlegacy:1122335064894738452>",
   originally_known_as: process.env.BADGE_EMOJI_LEGACY_USER || "<:rzlegacy:1122335064894738452>",
   hypesquad_house_1: process.env.BADGE_EMOJI_HYPESQUAD_1 || "<:BraveryLogo:1067078454526357554>",
@@ -27,9 +27,9 @@ const PROFILE_BADGE_DEFAULTS = {
   staff: process.env.BADGE_EMOJI_STAFF || "👨‍💼",
   verified_bot: process.env.BADGE_EMOJI_VERIFIED_BOT || "✅",
   // Orbs / leaf badge (2025+)
-  orb_profile_badge: process.env.BADGE_EMOJI_ORB || "🍃",
-  orbs: process.env.BADGE_EMOJI_ORB || "🍃",
-  orb_apprentice: process.env.BADGE_EMOJI_ORB || "🍃",
+  orb_profile_badge: process.env.BADGE_EMOJI_ORB || "<a:Orb_Shine:1414047706485362790>",
+  orbs: process.env.BADGE_EMOJI_ORB || "<a:Orb_Shine:1414047706485362790>",
+  orb_apprentice: process.env.BADGE_EMOJI_ORB || "<a:Orb_Shine:1414047706485362790>",
 };
 
 /** Só nitro/boost tenure — NÃO usar includes("premium") (mata Early Supporter) */

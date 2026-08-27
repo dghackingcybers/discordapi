@@ -53,6 +53,8 @@ services:
         sync: false
       - key: BADGE_EMOJI_QUEST
         sync: false
+      - key: BADGE_EMOJI_ORB
+        sync: false
       - key: BADGE_EMOJI_ACTIVE_DEV
         sync: false
       - key: BADGE_EMOJI_EARLY_SUPPORTER
