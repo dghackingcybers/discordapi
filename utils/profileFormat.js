@@ -36,7 +36,7 @@ const BADGE_MAP = {
   4194304: { name: "ACTIVE_DEVELOPER", emoji: process.env.BADGE_EMOJI_ACTIVE_DEV || "<:1042433990952497212:1067078961445752913>" },
 };
 
-/** Selfbot usa user.flags; d.js normal usa publicFlags. */
+/** Une TODAS as fontes — cache do selfbot costuma vir incompleto. */
 function resolvePublicFlags(user, profile = null) {
   const candidates = [
     user?.flags?.bitfield,
@@ -50,11 +50,12 @@ function resolvePublicFlags(user, profile = null) {
     profile?.public_flags,
   ];
 
+  let flags = 0;
   for (const value of candidates) {
-    const n = Number(value);
-    if (Number.isFinite(n) && n >= 0) return n;
+    const n = Number(value?.bitfield ?? value);
+    if (Number.isFinite(n) && n > 0) flags |= n;
   }
-  return 0;
+  return flags >>> 0;
 }
 
 const BADGE_ICONS = {

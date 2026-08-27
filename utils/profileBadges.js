@@ -68,8 +68,12 @@ function resolveProfileBadgeEmoji(badge) {
 }
 
 function collectProfileBadges(profile) {
-  const raw = profile?.badges ?? profile?.user?.badges ?? profile?.user_profile?.badges ?? [];
-  if (!Array.isArray(raw)) return [];
+  const raw = [
+    ...(Array.isArray(profile?.badges) ? profile.badges : []),
+    ...(Array.isArray(profile?.user?.badges) ? profile.user.badges : []),
+    ...(Array.isArray(profile?.user_profile?.badges) ? profile.user_profile.badges : []),
+    ...(Array.isArray(profile?.guild_badges) ? profile.guild_badges : []),
+  ];
 
   const seen = new Set();
   const result = [];
@@ -87,7 +91,21 @@ function collectProfileBadges(profile) {
       emoji,
       source: "profile",
       description: badge.description ?? null,
+      icon: badge.icon ?? null,
     });
+  }
+
+  // Legacy username às vezes vem só no campo solto, sem entrar em badges[]
+  if (profile?.legacy_username && !seen.has("legacy_username")) {
+    const emoji = PROFILE_BADGE_DEFAULTS.legacy_username;
+    if (emoji) {
+      result.push({
+        name: "LEGACY_USERNAME",
+        emoji,
+        source: "profile",
+        description: profile.legacy_username,
+      });
+    }
   }
 
   return result;

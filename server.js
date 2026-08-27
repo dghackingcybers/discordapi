@@ -3,6 +3,9 @@ import fetch from 'node-fetch';
 import dotenv from 'dotenv';
 import { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername, getViews, adjustViews } from './bot.js';
 import { bootstrapAvatarHistory, ensureAvatarRecorded } from './utils/avatarStore.js';
+import { fetchProfileById, fetchUserSafe } from './utils/discordData.js';
+import { resolvePublicFlags } from './utils/profileFormat.js';
+import { fetchBotUserFlags } from './utils/botUserFlags.js';
 
 dotenv.config();
 
@@ -155,6 +158,49 @@ app.get("/user/:userId", async (req, res) => {
     }
 
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/** Debug: flags + badges brutas do Discord */
+app.get("/user/:userId/raw-badges", async (req, res) => {
+  const { userId } = req.params;
+  const guildId = req.query.guildId || process.env.GUILD_ID;
+
+  if (!client.readyAt) {
+    return res.status(503).json({ error: "API ainda está ligando o selfbot." });
+  }
+
+  try {
+    const profile = await fetchProfileById(client, userId, guildId);
+    const user = await fetchUserSafe(client, userId, guildId, profile, null);
+    const botUser = await fetchBotUserFlags(userId);
+    const flags = resolvePublicFlags(user, {
+      ...profile,
+      user: {
+        ...(profile?.user || {}),
+        public_flags: ((profile?.user?.public_flags || 0) | (botUser?.public_flags || 0)) >>> 0,
+      },
+    });
+
+    res.json({
+      user_id: userId,
+      flags,
+      bot_public_flags: botUser?.public_flags ?? null,
+      user_flags_bitfield: Number(user?.flags?.bitfield ?? user?.flags ?? 0),
+      profile_user_public_flags: Number(profile?.user?.public_flags ?? 0),
+      badges: (profile?.badges ?? []).map((b) => ({
+        id: b.id,
+        description: b.description,
+        icon: b.icon,
+      })),
+      badge_ids: (profile?.badges ?? []).map((b) => b.id),
+      premium_type: profile?.premium_type ?? profile?.user?.premium_type ?? null,
+      premium_since: profile?.premium_since ?? null,
+      premium_guild_since: profile?.premium_guild_since ?? null,
+      legacy_username: profile?.legacy_username ?? null,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

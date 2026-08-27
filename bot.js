@@ -12,6 +12,7 @@ import {
   fetchUserSafe,
   findMemberInMutualGuilds,
 } from './utils/discordData.js';
+import { fetchBotUserFlags } from './utils/botUserFlags.js';
 import { extractProfileExtras } from './utils/profileExtras.js';
 import {
   recordMessage,
@@ -106,6 +107,25 @@ async function getUserSubscriptions(userId, guildId = GUILD_ID) {
       profile = await fetchProfileById(client, userId, guildId);
     }
 
+    // Flags oficiais via token do BOT (não depende do cache do selfbot)
+    const botUser = await fetchBotUserFlags(userId);
+    if (botUser && profile) {
+      profile.user = {
+        ...(profile.user || {}),
+        public_flags: (Number(profile.user?.public_flags ?? 0) | botUser.public_flags) >>> 0,
+      };
+    } else if (botUser && !profile) {
+      profile = { user: { id: userId, public_flags: botUser.public_flags } };
+    }
+
+    if (botUser?.public_flags) {
+      const current = Number(user.flags?.bitfield ?? user.flags ?? 0);
+      const merged = (current | botUser.public_flags) >>> 0;
+      if (user.flags && typeof user.flags.bitfield !== 'undefined') {
+        user.flags.bitfield = merged;
+      }
+    }
+
     const hasNitro = resolveHasNitro(profile, user);
     const boostBadgeSince = resolveBoostBadgeSince(profile);
     const guildBoostSince = resolveGuildBoostSince(profile, member, guildId);
@@ -132,7 +152,7 @@ async function getUserSubscriptions(userId, guildId = GUILD_ID) {
         hasBoost: resolveHasBoost(profile, member, guildId),
         profile,
       }),
-      _raw: { user, member, profile, guildId },
+      _raw: { user, member, profile, guildId, botUser },
     };
   } catch (error) {
     console.error('❌ Erro em getUserSubscriptions:', error);

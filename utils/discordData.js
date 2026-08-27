@@ -139,40 +139,64 @@ async function fetchProfileById(client, userId, guildId) {
   // Sem type:modal — o modal costuma vir sem badges[] completas.
   const baseQuery = {
     with_mutual_guilds: true,
-    with_mutual_friends: true,
     with_mutual_friends_count: true,
   };
 
-  try {
-    return await client.api.users(userId).profile.get({
-      query: {
-        ...baseQuery,
-        ...(guildId ? { guild_id: guildId } : {}),
-      },
-    });
-  } catch (error) {
-    console.warn("⚠️ Perfil indisponível:", error.message);
+  const attempts = [];
+
+  if (guildId) {
+    attempts.push({ ...baseQuery, guild_id: guildId, with_mutual_friends: true });
+    attempts.push({ ...baseQuery, guild_id: guildId });
+  }
+  attempts.push({ ...baseQuery, with_mutual_friends: true });
+  attempts.push({ ...baseQuery });
+
+  let best = null;
+
+  for (const query of attempts) {
+    try {
+      const profile = await client.api.users(userId).profile.get({ query });
+      if (!profile) continue;
+      best = best ? mergeProfiles(best, profile) : profile;
+
+      const badgeCount = Array.isArray(profile.badges) ? profile.badges.length : 0;
+      const flags = Number(profile?.user?.public_flags ?? 0);
+      // Já tem badges + flags → suficiente
+      if (badgeCount > 0 && flags > 0) break;
+    } catch (error) {
+      console.warn("⚠️ Perfil indisponível:", error.message);
+    }
   }
 
-  if (!guildId) return null;
-
-  try {
-    return await client.api.users(userId).profile.get({ query: baseQuery });
-  } catch (error) {
-    console.warn("⚠️ Perfil global indisponível:", error.message);
-    return null;
-  }
+  return best;
 }
 
 async function fetchUserSafe(client, userId, guildId, profile = null, member = null) {
-  const cached = client.users.cache.get(userId);
-  if (cached) return cached;
+  // Sempre tenta REST fresco — cache do selfbot perde public_flags.
+  try {
+    const fetched = await client.users.fetch(userId, { force: true });
+    if (fetched) {
+      const profileFlags = Number(profile?.user?.public_flags ?? profile?.user?.flags ?? 0);
+      if (profileFlags > 0) {
+        const current = Number(fetched.flags?.bitfield ?? fetched.flags ?? 0);
+        const merged = (current | profileFlags) >>> 0;
+        if (fetched.flags && typeof fetched.flags.bitfield !== "undefined") {
+          fetched.flags.bitfield = merged;
+        } else if (fetched.flags != null) {
+          fetched.flags = merged;
+        }
+      }
+      return fetched;
+    }
+  } catch (error) {
+    console.warn("⚠️ users.fetch force falhou:", error.message);
+  }
 
   if (member?.user) return member.user;
 
   if (profile?.user) {
     try {
-      const userFromProfile = client.users._add(profile.user, false);
+      const userFromProfile = client.users._add(profile.user, true);
       if (profile.user.banner && !userFromProfile.banner) {
         userFromProfile.banner = profile.user.banner;
       }
@@ -181,9 +205,12 @@ async function fetchUserSafe(client, userId, guildId, profile = null, member = n
       }
       return userFromProfile;
     } catch {
-      // segue para outros fallbacks
+      // segue
     }
   }
+
+  const cached = client.users.cache.get(userId);
+  if (cached) return cached;
 
   if (guildId) {
     const guildMember = await fetchMemberInGuild(client, guildId, userId);
