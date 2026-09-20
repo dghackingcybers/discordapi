@@ -186,6 +186,7 @@ app.get("/user/:userId/raw-badges", async (req, res) => {
 
     res.json({
       user_id: userId,
+      private_profile: Boolean(profile?.private),
       flags,
       bot_public_flags: botUser?.public_flags ?? null,
       user_flags_bitfield: Number(user?.flags?.bitfield ?? user?.flags ?? 0),
@@ -200,6 +201,10 @@ app.get("/user/:userId/raw-badges", async (req, res) => {
       premium_since: profile?.premium_since ?? null,
       premium_guild_since: profile?.premium_guild_since ?? null,
       legacy_username: profile?.legacy_username ?? null,
+      mutual_guilds: profile?.mutual_guilds?.length ?? 0,
+      hint: profile?.private
+        ? "Perfil PRIVADO: Discord esconde badges/bio/premium_since de quem não é amigo do selfbot. Adicione a conta do selfbot como amigo OU desative Perfil Privado nas configs do Discord."
+        : (profile?.badges?.length ? null : "badges[] vazio — confira se o selfbot compartilha servidor ou amizade com o user."),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

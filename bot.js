@@ -29,85 +29,152 @@ import {
   bootstrapAvatarHistory,
 } from './utils/avatarStore.js';
 import { getViews, incrementViews, adjustViews } from './utils/viewStore.js';
+import { tokenManager } from './utils/tokenManager.js';
 
 dotenv.config();
 
-const client = new Client();
-const DISCORD_TOKEN = process.env.SELFBOT_TOKEN || process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
 
-client.on('ready', () => {
-  console.log(`✅ Selfbot logado como ${client.user.tag}`);
-});
+// =====================================================
+// CLIENT (multi-token com fallback)
+// =====================================================
 
-client.on('messageCreate', (message) => {
-  try {
-    recordMessage(message, { deleted: false });
-  } catch {
-    // ignora
-  }
-});
+let client = new Client();
+let activeTokenObj = null;
+let isReconnecting = false;
 
-client.on('messageDelete', (message) => {
-  try {
-    recordMessage(message, { deleted: true });
-  } catch {
-    // ignora
-  }
-});
-
-client.on('voiceStateUpdate', (oldState, newState) => {
-  try {
-    recordVoiceUpdate(oldState, newState);
-  } catch {
-    // ignora
-  }
-});
-
-client.on('userUpdate', (oldUser, newUser) => {
-  try {
-    recordUserUpdate(oldUser, newUser);
-    recordAvatarUpdate(oldUser, newUser);
-  } catch {
-    // ignora
-  }
-});
-
-client.on('guildMemberUpdate', (oldMember, newMember) => {
-  try {
-    if (oldMember?.user && newMember?.user) {
-      recordAvatarUpdate(oldMember.user, newMember.user);
+function attachClientEvents(c) {
+  c.on('ready', () => {
+    console.log(`✅ Selfbot logado como ${c.user.tag}`);
+    if (activeTokenObj) {
+      tokenManager.markSuccess(activeTokenObj);
     }
-  } catch {
-    // ignora
-  }
-});
+  });
 
-client.on('guildMemberAdd', (member) => {
-  try {
-    if (member?.user && !member.user.bot) {
-      ensureAvatarRecorded(member.user, { archive: false }).catch(() => {});
-    }
-  } catch {
-    // ignora
+  c.on('messageCreate', (message) => {
+    try { recordMessage(message, { deleted: false }); } catch {}
+  });
+
+  c.on('messageDelete', (message) => {
+    try { recordMessage(message, { deleted: true }); } catch {}
+  });
+
+  c.on('voiceStateUpdate', (oldState, newState) => {
+    try { recordVoiceUpdate(oldState, newState); } catch {}
+  });
+
+  c.on('userUpdate', (oldUser, newUser) => {
+    try {
+      recordUserUpdate(oldUser, newUser);
+      recordAvatarUpdate(oldUser, newUser);
+    } catch {}
+  });
+
+  c.on('guildMemberUpdate', (oldMember, newMember) => {
+    try {
+      if (oldMember?.user && newMember?.user) {
+        recordAvatarUpdate(oldMember.user, newMember.user);
+      }
+    } catch {}
+  });
+
+  c.on('guildMemberAdd', (member) => {
+    try {
+      if (member?.user && !member.user.bot) {
+        ensureAvatarRecorded(member.user, { archive: false }).catch(() => {});
+      }
+    } catch {}
+  });
+
+  c.on('error', (err) => {
+    console.error('❌ [Client] Erro:', err.message);
+  });
+}
+
+attachClientEvents(client);
+
+// =====================================================
+// LOGIN COM ROTAÇÃO
+// =====================================================
+
+async function loginWithToken(tokenObj) {
+  if (!tokenObj?.token) {
+    console.error('❌ [Client] Nenhum token disponível.');
+    return false;
   }
-});
+
+  try {
+    console.log(`🔑 [Client] Tentando login com token #${tokenObj.index ?? '?'}...`);
+    await client.login(tokenObj.token);
+    activeTokenObj = tokenObj;
+    return true;
+  } catch (err) {
+    console.error(`❌ [Client] Login falhou (token #${tokenObj.index ?? '?'}):`, err.message);
+
+    const status = err.status || err.httpStatus;
+    if (status === 401 || err.message?.includes('401') || err.message?.includes('TOKEN_INVALID')) {
+      tokenManager.markInvalid(tokenObj, '401');
+    } else if (status === 429 || err.message?.includes('rate limit')) {
+      tokenManager.markRateLimited(tokenObj);
+    }
+
+    return false;
+  }
+}
+
+async function tryNextToken() {
+  if (isReconnecting) return;
+  isReconnecting = true;
+
+  try {
+    const tokenObj = tokenManager.getNextToken();
+
+    if (!tokenObj) {
+      console.error('❌ [Client] Nenhum token disponível para reconectar.');
+      return;
+    }
+
+    if (tokenObj.allCooldown) {
+      const waitMs = Math.max(tokenObj.waitMs || 5000, 3000);
+      console.log(`⏳ [Client] Todos os tokens em cooldown. Aguardando ${Math.ceil(waitMs / 1000)}s...`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+
+    // Destrói o client antigo e cria um novo
+    try { client.destroy(); } catch {}
+    client = new Client();
+    attachClientEvents(client);
+
+    const ok = await loginWithToken(tokenObj);
+
+    if (!ok) {
+      // Tenta de novo com o próximo
+      setTimeout(() => {
+        isReconnecting = false;
+        tryNextToken();
+      }, 5000);
+      return;
+    }
+  } finally {
+    isReconnecting = false;
+  }
+}
+
+// =====================================================
+// FUNÇÕES DE API (usam o `client` ativo)
+// =====================================================
 
 async function getUserSubscriptions(userId, guildId = GUILD_ID) {
   try {
     let profile = await fetchProfileById(client, userId, guildId);
     const member = await findMemberInMutualGuilds(client, userId, profile, guildId);
-
     const user = await fetchUserSafe(client, userId, guildId, profile, member);
-    if (!user) {
-      return null;
-    }
+    if (!user) return null;
 
     if (!profile) {
       profile = await fetchProfileById(client, userId, guildId);
     }
 
-    // Flags oficiais via token do BOT (não depende do cache do selfbot)
     const botUser = await fetchBotUserFlags(userId);
     if (botUser && profile) {
       profile.user = {
@@ -164,10 +231,7 @@ async function getUserPresence(userId, guildId = GUILD_ID) {
   try {
     const targetGuildId = guildId || GUILD_ID;
     const guild = client.guilds.cache.get(targetGuildId);
-
-    if (!guild) {
-      throw new Error('Guild não encontrada');
-    }
+    if (!guild) throw new Error('Guild não encontrada');
 
     const member = await guild.members.fetch(userId);
     const presence = member.presence || null;
@@ -179,7 +243,6 @@ async function getUserPresence(userId, guildId = GUILD_ID) {
 
     if (presence) {
       discordStatus = presence.status;
-
       activities = presence.activities.map((activity) => ({
         id: activity.id,
         name: activity.name,
@@ -230,7 +293,6 @@ async function getUserPresence(userId, guildId = GUILD_ID) {
 async function getUserProfileCard(userId, options = {}) {
   const guildId = options.guildId || GUILD_ID;
   const subscriptions = await getUserSubscriptions(userId, guildId);
-
   if (!subscriptions?._raw) {
     return { success: false, error: 'Usuário não encontrado ou sem acesso ao perfil.' };
   }
@@ -239,7 +301,6 @@ async function getUserProfileCard(userId, options = {}) {
   const executor = options.executor ?? client.user;
   const presence = await getUserPresence(userId, guildId);
 
-  // Contador persistente: incrementa só quando o bot pede (views>=1 / increment=true)
   const shouldIncrement =
     options.incrementViews === true ||
     options.increment === true ||
@@ -250,10 +311,7 @@ async function getUserProfileCard(userId, options = {}) {
     : getViews(userId);
 
   const profileCard = buildProfileCard({
-    user,
-    member,
-    profile,
-    executor,
+    user, member, profile, executor,
     views: viewCount,
     guildId,
     customStatus: presence.custom_status,
@@ -326,22 +384,17 @@ async function getUserPanelSection(userId, section, options = {}) {
   if (section === 'icons') {
     let user = client.users.cache.get(userId);
     if (!user) {
-      try {
-        user = await client.users.fetch(userId);
-      } catch {
-        user = null;
-      }
+      try { user = await client.users.fetch(userId); } catch { user = null; }
     }
 
     if (user) {
       await ensureAvatarRecorded(user, { archive: false }).catch(() => {});
     }
 
-    const icons = getAvatarHistory(userId, page, 1);
+    const icons = await getAvatarHistory(userId, page, 1);
     return {
       success: true,
-      section,
-      page,
+      section, page,
       profile: { id: userId, name, thumbnail: profile.thumbnail },
       icons,
     };
@@ -372,16 +425,11 @@ async function getUserPanelSection(userId, section, options = {}) {
 }
 
 async function lookupUserByUsername(query, preferredGuildId = GUILD_ID) {
-  const handle = String(query || '')
-    .trim()
-    .replace(/^@+/, '')
-    .toLowerCase();
-
+  const handle = String(query || '').trim().replace(/^@+/, '').toLowerCase();
   if (!handle || handle.length < 2) {
     return { success: false, error: 'Username inválido.' };
   }
 
-  // 1) índice / histórico da API
   const indexedId = findUserIdByUsername(handle);
   if (indexedId) {
     try {
@@ -393,16 +441,11 @@ async function lookupUserByUsername(query, preferredGuildId = GUILD_ID) {
         global_name: user.globalName ?? null,
         source: 'history',
       };
-    } catch {
-      // continua
-    }
+    } catch {}
   }
 
-  // 2) cache do selfbot
   const cached = client.users.cache.find(
-    (user) =>
-      user.username?.toLowerCase() === handle ||
-      user.globalName?.toLowerCase() === handle,
+    (user) => user.username?.toLowerCase() === handle || user.globalName?.toLowerCase() === handle,
   );
   if (cached) {
     indexUsername(cached.id, cached.username);
@@ -416,7 +459,6 @@ async function lookupUserByUsername(query, preferredGuildId = GUILD_ID) {
     };
   }
 
-  // 3) busca em todos os servidores do selfbot (Search Guild Members)
   const guilds = [...client.guilds.cache.values()];
   if (preferredGuildId) {
     guilds.sort((a, b) => Number(b.id === preferredGuildId) - Number(a.id === preferredGuildId));
@@ -433,14 +475,11 @@ async function lookupUserByUsername(query, preferredGuildId = GUILD_ID) {
           member.user.globalName?.toLowerCase() === handle ||
           member.displayName?.toLowerCase() === handle,
       );
-      const match =
-        exact ||
-        list.find(
-          (member) =>
-            member.user.username?.toLowerCase().startsWith(handle) ||
-            member.displayName?.toLowerCase().startsWith(handle),
-        ) ||
-        list[0];
+      const match = exact || list.find(
+        (member) =>
+          member.user.username?.toLowerCase().startsWith(handle) ||
+          member.displayName?.toLowerCase().startsWith(handle),
+      ) || list[0];
 
       if (match?.user) {
         indexUsername(match.user.id, match.user.username);
@@ -453,14 +492,45 @@ async function lookupUserByUsername(query, preferredGuildId = GUILD_ID) {
           source: `guild:${guild.id}`,
         };
       }
-    } catch {
-      // próximo guild
-    }
+    } catch {}
   }
 
   return { success: false, error: `Usuário @${handle} não encontrado.` };
 }
 
-export { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername, getViews, adjustViews };
+// =====================================================
+// LOGIN INICIAL
+// =====================================================
 
-client.login(DISCORD_TOKEN);
+const initialToken = tokenManager.getNextToken();
+
+if (!initialToken) {
+  console.error('❌ [Client] Nenhum token configurado no DISCORD_SELF_TOKENS.');
+} else {
+  loginWithToken(initialToken).then((ok) => {
+    if (!ok) {
+      // Tenta próximo
+      setTimeout(() => tryNextToken(), 5000);
+    }
+  });
+}
+
+// Handler global: se o client cair por 401/rate limit, tenta próximo token
+process.on('unhandledRejection', (reason) => {
+  const msg = String(reason?.message || reason || '');
+  if (msg.includes('401') || msg.toLowerCase().includes('token')) {
+    console.warn('⚠️  [Client] Possível token inválido detectado. Tentando próximo...');
+    tryNextToken().catch(() => {});
+  }
+});
+
+export {
+  client,
+  getUserInfo,
+  getUserProfileCard,
+  getUserPanelSection,
+  getAvatarHistory,
+  lookupUserByUsername,
+  getViews,
+  adjustViews,
+};
