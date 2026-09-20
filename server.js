@@ -1,14 +1,46 @@
+// =====================================================
+// 1. DOTENV PRIMEIRO (antes de qualquer import que use process.env)
+// =====================================================
+import dotenv from 'dotenv';
+dotenv.config();
+
+// =====================================================
+// 2. IMPORTS
+// =====================================================
 import express from 'express';
 import fetch from 'node-fetch';
-import dotenv from 'dotenv';
-import { client, getUserInfo, getUserProfileCard, getUserPanelSection, getAvatarHistory, lookupUserByUsername, getViews, adjustViews } from './bot.js';
+
+import apiKeysRoutes from './routes/apiKeys.js';
+import statsRoutes from './routes/stats.js';
+import adminRoutes from './routes/admin.js';
+import { apiKeyAuth, adminAuth } from './utils/authMiddleware.js';
+import { connectMongo } from './utils/mongoStore.js';
+
+import {
+  client,
+  getUserInfo,
+  getUserProfileCard,
+  getUserPanelSection,
+  getAvatarHistory,
+  lookupUserByUsername,
+  getViews,
+  adjustViews,
+} from './bot.js';
 import { bootstrapAvatarHistory, ensureAvatarRecorded } from './utils/avatarStore.js';
 import { fetchProfileById, fetchUserSafe } from './utils/discordData.js';
 import { resolvePublicFlags } from './utils/profileFormat.js';
 import { fetchBotUserFlags } from './utils/botUserFlags.js';
 
-dotenv.config();
+// =====================================================
+// 3. CONECTA NO MONGO
+// =====================================================
+await connectMongo().catch((err) => {
+  console.error('❌ [Server] Falha ao conectar no Mongo:', err.message);
+});
 
+// =====================================================
+// 4. SETUP EXPRESS
+// =====================================================
 const app = express();
 const PORT = process.env.PORT || 3000;
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
@@ -16,51 +48,56 @@ const VIEWS_ADMIN_KEY = process.env.VIEWS_ADMIN_KEY || process.env.API_ADMIN_KEY
 
 app.use(express.json());
 
-console.log("Server is starting...");
+// =====================================================
+// 5. ROTAS NOVAS (API keys, stats, admin)
+// =====================================================
+app.use('/stats', statsRoutes);
+app.use('/api-keys', apiKeysRoutes);
+app.use('/admin', adminAuth, adminRoutes);
 
+console.log('Server is starting...');
+
+// =====================================================
+// 6. HELPERS
+// =====================================================
 function isViewsAdmin(req) {
   const key = req.headers['x-admin-key'] || req.query.key || req.body?.key || '';
-  if (!VIEWS_ADMIN_KEY) return true; // se não configurou key, libera (bot já restringe)
+  if (!VIEWS_ADMIN_KEY) return true;
   return String(key) === String(VIEWS_ADMIN_KEY);
 }
 
-// Função para obter bio e pronome (status customizado)
 async function getUserProfile(userId) {
   const response = await fetch(`https://discord.com/api/v10/users/${userId}`, {
-    headers: {
-      Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
-    },
+    headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` },
   });
 
   if (!response.ok) {
-    throw new Error("Usuário não encontrado ou token inválido");
+    throw new Error('Usuário não encontrado ou token inválido');
   }
 
-  const user = await response.json();
-
-  // Simulando status personalizado
-  const bio = "Biografia não disponível (Usuário offline ou sem presença)";
-  const pronouns = "Pronome não disponível (Usuário offline ou sem presença)";
+  await response.json();
 
   return {
-    bio,
-    pronouns
+    bio: 'Biografia não disponível (Usuário offline ou sem presença)',
+    pronouns: 'Pronome não disponível (Usuário offline ou sem presença)',
   };
 }
 
+// =====================================================
+// 7. ROTAS EXISTENTES (com apiKeyAuth)
+// =====================================================
+
 // 🔹 ROTA SIMPLIFICADA
-app.get("/userProfile/:userId", async (req, res) => {
+app.get('/userProfile/:userId', apiKeyAuth, async (req, res) => {
   const { userId } = req.params;
 
   try {
     const user = await fetch(`https://discord.com/api/v10/users/${userId}`, {
-      headers: {
-        Authorization: `Bot ${DISCORD_BOT_TOKEN}`,
-      },
-    }).then(res => res.json());
+      headers: { Authorization: `Bot ${DISCORD_BOT_TOKEN}` },
+    }).then((r) => r.json());
 
     if (!user || !user.id) {
-      return res.status(404).json({ error: "Usuário não encontrado" });
+      return res.status(404).json({ error: 'Usuário não encontrado' });
     }
 
     const profileData = await getUserProfile(userId);
@@ -74,13 +111,13 @@ app.get("/userProfile/:userId", async (req, res) => {
       pronouns: profileData.pronouns,
     });
   } catch (error) {
-    console.error("Erro ao buscar dados do Discord:", error);
-    res.status(500).json({ error: "Erro ao buscar dados do Discord" });
+    console.error('Erro ao buscar dados do Discord:', error);
+    res.status(500).json({ error: 'Erro ao buscar dados do Discord' });
   }
 });
 
-// 🔹 ROTA COMPLETA (formato Zany + dados Lanyard)
-app.get("/userFullInfo/:userId", async (req, res) => {
+// 🔹 ROTA COMPLETA
+app.get('/userFullInfo/:userId', apiKeyAuth, async (req, res) => {
   const { userId } = req.params;
   const guildId = req.query.guildId || process.env.GUILD_ID;
   const views = Number(req.query.views) || 0;
@@ -88,28 +125,27 @@ app.get("/userFullInfo/:userId", async (req, res) => {
   try {
     const result = await getUserInfo(userId, { guildId, views });
     if (!result || !result.success) {
-      return res.status(500).json({ error: result?.error || "Não foi possível obter os dados completos." });
+      return res.status(500).json({ error: result?.error || 'Não foi possível obter os dados completos.' });
     }
-
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// 🔹 LOOKUP por username (@user) — ANTES de /user/:userId
-app.get("/lookup/user", async (req, res) => {
-  const q = req.query.q || req.query.username || req.query.user || "";
+// 🔹 LOOKUP por username
+app.get('/lookup/user', apiKeyAuth, async (req, res) => {
+  const q = req.query.q || req.query.username || req.query.user || '';
   const guildId = req.query.guildId || process.env.GUILD_ID;
 
   if (!client.readyAt) {
-    return res.status(503).json({ success: false, error: "API ainda está ligando o selfbot." });
+    return res.status(503).json({ success: false, error: 'API ainda está ligando o selfbot.' });
   }
 
   try {
     const result = await lookupUserByUsername(q, guildId);
     if (!result?.success) {
-      return res.status(404).json(result || { success: false, error: "Não encontrado." });
+      return res.status(404).json(result || { success: false, error: 'Não encontrado.' });
     }
     return res.json(result);
   } catch (error) {
@@ -117,59 +153,58 @@ app.get("/lookup/user", async (req, res) => {
   }
 });
 
-// 🔹 Contador de visualizações (puxadas do userinfo)
-app.get("/views/:userId", (req, res) => {
+// 🔹 Views (não precisa de apiKeyAuth — usa X-Admin-Key próprio)
+app.get('/views/:userId', (req, res) => {
   const { userId } = req.params;
   return res.json({ success: true, id: userId, views: getViews(userId) });
 });
 
-app.post("/views/:userId", (req, res) => {
+app.post('/views/:userId', (req, res) => {
   if (!isViewsAdmin(req)) {
-    return res.status(403).json({ success: false, error: "Não autorizado." });
+    return res.status(403).json({ success: false, error: 'Não autorizado.' });
   }
 
   const { userId } = req.params;
-  const action = req.body?.action || req.query.action || "add";
+  const action = req.body?.action || req.query.action || 'add';
   const amountRaw = req.body?.amount ?? req.query.amount ?? 1;
   const amount = Number(amountRaw);
 
   if (!Number.isFinite(amount)) {
-    return res.status(400).json({ success: false, error: "Quantidade inválida." });
+    return res.status(400).json({ success: false, error: 'Quantidade inválida.' });
   }
 
   const views = adjustViews(userId, { action, amount });
   return res.json({ success: true, id: userId, action, amount, views });
 });
 
-// 🔹 ROTA CURTA (alias) — use /user/ID
-app.get("/user/:userId", async (req, res) => {
+// 🔹 PERFIL
+app.get('/user/:userId', apiKeyAuth, async (req, res) => {
   const { userId } = req.params;
   const guildId = req.query.guildId || process.env.GUILD_ID;
   const views = Number(req.query.views) || 0;
 
   if (!client.readyAt) {
-    return res.status(503).json({ error: "API ainda está ligando o selfbot. Tente em alguns segundos." });
+    return res.status(503).json({ error: 'API ainda está ligando o selfbot. Tente em alguns segundos.' });
   }
 
   try {
     const result = await getUserProfileCard(userId, { guildId, views });
     if (!result?.success) {
-      return res.status(404).json({ error: result?.error || "Perfil não encontrado." });
+      return res.status(404).json({ error: result?.error || 'Perfil não encontrado.' });
     }
-
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-/** Debug: flags + badges brutas do Discord */
-app.get("/user/:userId/raw-badges", async (req, res) => {
+// 🔹 RAW BADGES
+app.get('/user/:userId/raw-badges', apiKeyAuth, async (req, res) => {
   const { userId } = req.params;
   const guildId = req.query.guildId || process.env.GUILD_ID;
 
   if (!client.readyAt) {
-    return res.status(503).json({ error: "API ainda está ligando o selfbot." });
+    return res.status(503).json({ error: 'API ainda está ligando o selfbot.' });
   }
 
   try {
@@ -203,16 +238,16 @@ app.get("/user/:userId/raw-badges", async (req, res) => {
       legacy_username: profile?.legacy_username ?? null,
       mutual_guilds: profile?.mutual_guilds?.length ?? 0,
       hint: profile?.private
-        ? "Perfil PRIVADO: Discord esconde badges/bio/premium_since de quem não é amigo do selfbot. Adicione a conta do selfbot como amigo OU desative Perfil Privado nas configs do Discord."
-        : (profile?.badges?.length ? null : "badges[] vazio — confira se o selfbot compartilha servidor ou amizade com o user."),
+        ? 'Perfil PRIVADO...'
+        : (profile?.badges?.length ? null : 'badges[] vazio...'),
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// 🔹 ROTA NO ESTILO DO BOT ZANY (embed pronto)
-app.get("/userProfileCard/:userId", async (req, res) => {
+// 🔹 PROFILE CARD
+app.get('/userProfileCard/:userId', apiKeyAuth, async (req, res) => {
   const { userId } = req.params;
   const guildId = req.query.guildId || process.env.GUILD_ID;
   const views = Number(req.query.views) || 0;
@@ -220,17 +255,16 @@ app.get("/userProfileCard/:userId", async (req, res) => {
   try {
     const result = await getUserProfileCard(userId, { guildId, views });
     if (!result?.success) {
-      return res.status(404).json({ error: result?.error || "Perfil não encontrado." });
+      return res.status(404).json({ error: result?.error || 'Perfil não encontrado.' });
     }
-
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// 🔹 Ícones antigos (histórico de avatares)
-app.get("/user/:userId/avatars", async (req, res) => {
+// 🔹 AVATARES
+app.get('/user/:userId/avatars', apiKeyAuth, async (req, res) => {
   const { userId } = req.params;
   const page = Number(req.query.page) || 0;
   const pageSize = Math.min(Number(req.query.limit) || 10, 50);
@@ -238,26 +272,22 @@ app.get("/user/:userId/avatars", async (req, res) => {
   try {
     let user = client.users.cache.get(userId);
     if (!user) {
-      try {
-        user = await client.users.fetch(userId);
-      } catch {
-        user = null;
-      }
+      try { user = await client.users.fetch(userId); } catch { user = null; }
     }
 
     if (user) {
       await ensureAvatarRecorded(user, { archive: false });
     }
 
-    const icons = getAvatarHistory(userId, page, pageSize);
+    const icons = await getAvatarHistory(userId, page, pageSize);
     res.json({ success: true, userId, icons });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// 🔹 Seção do painel (logs, nomes, etc.)
-app.get("/user/:userId/panel/:section", async (req, res) => {
+// 🔹 PAINEL
+app.get('/user/:userId/panel/:section', apiKeyAuth, async (req, res) => {
   const { userId, section } = req.params;
   const guildId = req.query.guildId || process.env.GUILD_ID;
   const page = Number(req.query.page) || 0;
@@ -265,58 +295,53 @@ app.get("/user/:userId/panel/:section", async (req, res) => {
   try {
     const result = await getUserPanelSection(userId, section, { guildId, page });
     if (!result?.success) {
-      return res.status(404).json({ error: result?.error || "Seção indisponível." });
+      return res.status(404).json({ error: result?.error || 'Seção indisponível.' });
     }
-
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// 🔹 Lista de rotas
-app.get("/", (req, res) => {
+// =====================================================
+// 8. LISTA DE ROTAS
+// =====================================================
+app.get('/', (req, res) => {
   res.json({
-    status: "online",
+    status: 'online',
     rotas: {
-      perfil: "GET /user/:userId",
-      lookup: "GET /lookup/user?q=username",
-      views_get: "GET /views/:userId",
-      views_edit: "POST /views/:userId { action: add|remove|set, amount }",
-      perfil_zany: "GET /userProfileCard/:userId",
-      completo: "GET /userFullInfo/:userId",
-      basico: "GET /userProfile/:userId",
-      painel: "GET /user/:userId/panel/:section?page=0",
-      avatars: "GET /user/:userId/avatars?page=0",
+      stats: 'GET /stats',
+      register_key: 'POST /api-keys/register',
+      my_key: 'GET /api-keys/me',
+      revoke_key: 'DELETE /api-keys/me',
+      admin_keys: 'GET /admin/keys (X-Admin-Key)',
+      perfil: 'GET /user/:userId (X-API-Key)',
+      lookup: 'GET /lookup/user?q=username (X-API-Key)',
+      painel: 'GET /user/:userId/panel/:section (X-API-Key)',
+      avatars: 'GET /user/:userId/avatars (X-API-Key)',
     },
     exemplo: `http://localhost:${PORT}/user/1486900684623314955`,
   });
 });
 
-// 🔸 Sobe o HTTP imediatamente (evita 502 no healthcheck do Render)
-let serverStarted = false;
+// =====================================================
+// 9. SOBE O SERVIDOR
+// =====================================================
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+});
 
-if (!serverStarted) {
-  serverStarted = true;
-
-  const server = app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  });
-
-  server.on('error', (error) => {
-    if (error.code === 'EADDRINUSE') {
-      console.error(`❌ Porta ${PORT} já está em uso. Feche a instância anterior ou mude PORT no .env`);
-      process.exit(1);
-    }
-
-    console.error('❌ Erro ao iniciar servidor:', error);
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`❌ Porta ${PORT} já em uso.`);
     process.exit(1);
-  });
-}
+  }
+  console.error('❌ Erro ao iniciar servidor:', error);
+  process.exit(1);
+});
 
 client.on('ready', () => {
   console.log(`✅ Selfbot logado como ${client.user.tag}`);
-
   bootstrapAvatarHistory(client).catch((error) => {
     console.warn('⚠️ [AvatarStore] Bootstrap falhou:', error.message);
   });
